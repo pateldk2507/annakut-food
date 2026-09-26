@@ -1,0 +1,28 @@
+{
+  "name": "annakut-client",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "datatables.net-buttons-dt": "^4.0.3",
+    "datatables.net-dt": "^3.0.4",
+    "datatables.net-react": "^1.0.2",
+    "datatables.net-responsive-dt": "^4.0.3",
+    "firebase": "^11.8.1",
+    "html2canvas": "^1.4.1",
+    "jszip": "^3.10.2",
+    "pdfmake": "^0.3.11",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.4.1",
+    "vite": "^5.4.19"
+  }
+}
