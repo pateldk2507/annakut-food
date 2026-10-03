@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import DataTable from "datatables.net-react";
 import DataTablesCore from "datatables.net-dt";
 import JSZip from "jszip";
@@ -11,6 +11,7 @@ import "datatables.net-dt/css/dataTables.dataTables.css";
 import "datatables.net-buttons-dt/css/buttons.dataTables.css";
 import "datatables.net-responsive-dt/css/responsive.dataTables.css";
 import resetPasswordIcon from "./assets/reset-password.png";
+import { VolunteerAdmin, VolunteerAdminContent, VolunteerHome } from "./VolunteerPortal";
 import {
   getCart,
   getCartSessionId,
@@ -33,6 +34,7 @@ import {
   addAdminMenuItem,
   addAdminMenuCategory,
   approveAdminItemRequest,
+  deleteAdminItemRequest,
   deleteAdminUser,
   fetchBookedItems,
   fetchAdminAccounts,
@@ -252,6 +254,35 @@ function ActionButton({ to, onClick, children, secondary = false, danger = false
     <button className={className} disabled={disabled} onClick={onClick} type={type}>
       {children}
     </button>
+  );
+}
+
+function hasAnnakutAdminAccess(permission) {
+  return ["super_admin", "admin", "annakut_admin", "both_admin", "orders_status"].includes(permission);
+}
+
+function hasFullAnnakutAccess(permission) {
+  return ["super_admin", "admin", "annakut_admin", "both_admin"].includes(permission);
+}
+
+function hasVolunteerAdminAccess(permission) {
+  return ["super_admin", "volunteer_admin", "both_admin"].includes(permission);
+}
+
+function hasAnyAdminAccess(permission) {
+  return hasAnnakutAdminAccess(permission) || hasVolunteerAdminAccess(permission);
+}
+
+function PortalChooser({ permission }) {
+  const navigate = useNavigate();
+  return (
+    <AppShell background={backgrounds.home} title="Seva Portal" subtitle="Choose where you would like to continue">
+      <div className="tile-grid portal-tile-grid">
+        <button className="selection-tile" onClick={() => navigate("/annakut")} type="button"><div className="selection-icon">Annakut</div><strong>Annakut</strong><span>Select and submit food offerings</span></button>
+        <button className="selection-tile" onClick={() => navigate("/volunteer")} type="button"><div className="selection-icon">Volunteer</div><strong>Volunteer</strong><span>Submit your seva availability</span></button>
+        {hasAnyAdminAccess(permission) ? <button className="selection-tile" onClick={() => navigate("/admin")} type="button"><div className="selection-icon">Admin</div><strong>Admin</strong><span>Open your permitted administration pages</span></button> : null}
+      </div>
+    </AppShell>
   );
 }
 
@@ -692,6 +723,7 @@ function HomePage({ firebaseUser, menu, cart, cartCount, setCartState, setDetail
 
   return (
     <AppShell
+      backTo={firebaseUser ? "/" : ""}
       background={backgrounds.home}
       cartCount={cartCount}
       fullBleed={!firebaseUser}
@@ -844,7 +876,7 @@ function CategoryPage({ firebaseUser, menu, cartCount }) {
   }
 
   return (
-    <AppShell backLabel="Home" backTo="/" background={backgrounds.category} cartCount={cartCount} showCartShortcut title="Category" subtitle="Select a category">
+    <AppShell backLabel="Home" backTo="/annakut" background={backgrounds.category} cartCount={cartCount} showCartShortcut title="Category" subtitle="Select a category">
       <div className="tile-grid">
         {menu.categories.map((category) => (
           <button
@@ -882,7 +914,7 @@ function SubcategoryPage({ firebaseUser, menu, cartCount }) {
   }
 
   return (
-    <AppShell backLabel="Home" backTo="/" background={backgrounds.subcategory} cartCount={cartCount} showCartShortcut title={category.name} subtitle="">
+    <AppShell backLabel="Home" backTo="/annakut" background={backgrounds.subcategory} cartCount={cartCount} showCartShortcut title={category.name} subtitle="">
       <label className="menu-search-field subcategory-search">
         <span>Search subcategories</span>
         <input className="admin-search" onChange={(event) => setSubcategorySearch(event.target.value)} placeholder="Search subcategory name" type="search" value={subcategorySearch} />
@@ -1101,7 +1133,7 @@ function CartPage({ firebaseUser, cart, setCartState, availability }) {
   }
 
   return (
-    <AppShell backTo="/" background={backgrounds.cart} title="Cart" subtitle="Review selected items">
+    <AppShell backTo="/annakut" background={backgrounds.cart} title="Cart" subtitle="Review selected items">
       {availability.conflicts?.length ? (
         <div className="conflict-banner">
           <strong>Conflict detected</strong>
@@ -1161,7 +1193,7 @@ function CartPage({ firebaseUser, cart, setCartState, availability }) {
         <ActionButton disabled={!items.length} onClick={() => navigate("/details")}>
           Continue
         </ActionButton>
-        <ActionButton onClick={() => navigate("/")} secondary>
+        <ActionButton onClick={() => navigate("/annakut")} secondary>
           Back to Home
         </ActionButton>
       </div>
@@ -1328,7 +1360,7 @@ function ProfilePage({ firebaseUser, cartCount, setCartState, setDetailsState })
   }
 
   return (
-    <AppShell backTo="/" background={backgrounds.details} cartCount={cartCount} screenClassName="screen-profile" showCartShortcut title="Profile" subtitle="Personal information and offerings">
+    <AppShell backTo="/annakut" background={backgrounds.details} cartCount={cartCount} screenClassName="screen-profile" showCartShortcut title="Profile" subtitle="Personal information and offerings">
       {loading ? (
         <div className="confirm-card">
           <strong>Loading profile...</strong>
@@ -1437,7 +1469,7 @@ function ProfilePage({ firebaseUser, cartCount, setCartState, setDetailsState })
       ) : null}
 
       <div className="footer-actions">
-        {["super_admin", "admin", "orders_status"].includes(permission) ? (
+        {hasAnyAdminAccess(permission) ? (
           <ActionButton onClick={() => navigate("/admin")}>
             Admin Panel
           </ActionButton>
@@ -1467,7 +1499,7 @@ function MenuItemActions({ item, onEdit, onRemove }) {
   );
 }
 
-function AdminMobileCards({ activeTab, accounts, offerings, menuItems, permissionOptions, statusOptions, savingId, onCancelOrder, onDeleteUser, onEdit, onPermissionChange, onRemoveItem, onResetPassword, onStatusChange }) {
+function AdminMobileCards({ activeTab, accounts, canManagePermissions, offerings, menuItems, permissionOptions, statusOptions, savingId, onCancelOrder, onDeleteUser, onEdit, onPermissionChange, onRemoveItem, onResetPassword, onStatusChange }) {
   const [query, setQuery] = useState("");
   const source = activeTab === "users" ? accounts : activeTab === "items" ? menuItems : offerings;
   const normalizedQuery = query.trim().toLowerCase();
@@ -1493,7 +1525,7 @@ function AdminMobileCards({ activeTab, accounts, offerings, menuItems, permissio
               </div>
               <div className="admin-card-contact"><span>{record.email || "-"}</span><span>{formatUsPhone(record.phone || "") || "-"}</span></div>
               <div className="admin-card-control-row">
-                <label><span className="sr-only">Permission</span><select aria-label={`Permission for ${record.full_name || "user"}`} className="admin-select" disabled={savingId === record.uid} onChange={(event) => onPermissionChange(record.uid, event.target.value)} value={record.permission || "user"}>{permissionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+                <label><span className="sr-only">Permission</span><select aria-label={`Permission for ${record.full_name || "user"}`} className="admin-select" disabled={!canManagePermissions || savingId === record.uid} onChange={(event) => onPermissionChange(record.uid, event.target.value)} value={record.permission || "user"}>{permissionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
               </div>
             </article>
           );
@@ -1524,7 +1556,7 @@ function AdminMobileCards({ activeTab, accounts, offerings, menuItems, permissio
   );
 }
 
-function RequestedItemCard({ itemRequest, menu, onApprove, saving }) {
+function RequestedItemCard({ itemRequest, menu, onApprove, onDelete, saving }) {
   const [categoryId, setCategoryId] = useState(itemRequest.categoryId || "");
   const [subcategoryId, setSubcategoryId] = useState(itemRequest.subcategoryId || "");
   const category = (menu.categories || []).find((entry) => entry.id === categoryId);
@@ -1541,16 +1573,17 @@ function RequestedItemCard({ itemRequest, menu, onApprove, saving }) {
           <button className="mini-button" disabled={saving || !categoryId || !subcategoryId} onClick={() => onApprove(itemRequest, categoryId, subcategoryId)} type="button">{saving ? "Approving..." : "Approve & Add"}</button>
         </div>
       ) : <div className="requested-item-approved">Added to the menu</div>}
+      <button className="mini-button danger" disabled={saving} onClick={() => onDelete(itemRequest)} type="button">Delete Request</button>
     </article>
   );
 }
 
-function AdminItemRequests({ itemRequests, menu, onApprove, savingId }) {
+function AdminItemRequests({ itemRequests, menu, onApprove, onDelete, savingId }) {
   return (
     <div className="list-panel requested-items-panel">
       <strong>Requested Offering Items</strong>
       <div className="requested-items-list">
-        {itemRequests.length ? itemRequests.map((itemRequest) => <RequestedItemCard itemRequest={itemRequest} key={itemRequest.id} menu={menu} onApprove={onApprove} saving={savingId === itemRequest.id} />) : <div className="empty-state">No offering items have been requested.</div>}
+        {itemRequests.length ? itemRequests.map((itemRequest) => <RequestedItemCard itemRequest={itemRequest} key={itemRequest.id} menu={menu} onApprove={onApprove} onDelete={onDelete} saving={savingId === itemRequest.id} />) : <div className="empty-state">No offering items have been requested.</div>}
       </div>
     </div>
   );
@@ -1692,7 +1725,7 @@ function AdminReports({ menuItems, offerings }) {
   );
 }
 
-function AdminDataTable({ activeTab, accounts, offerings, menuItems, permissionOptions, statusOptions, savingId, onCancelOrder, onDeleteUser, onEdit, onPermissionChange, onRemoveItem, onResetPassword, onStatusChange }) {
+function AdminDataTable({ activeTab, accounts, canManagePermissions, offerings, menuItems, permissionOptions, statusOptions, savingId, onCancelOrder, onDeleteUser, onEdit, onPermissionChange, onRemoveItem, onResetPassword, onStatusChange }) {
   const reportName = activeTab === "users" ? "Users" : activeTab === "items" ? "Menu Items" : "Orders";
   const exportColumns = activeTab === "users" ? [0, 1, 2, 3, 4] : activeTab === "items" ? [0, 1, 2] : [0, 1, 2, 3, 4, 5, 6];
   const exportOptions = {
@@ -1799,7 +1832,7 @@ function AdminDataTable({ activeTab, accounts, offerings, menuItems, permissionO
         slots={{
           2: (phone) => formatUsPhone(phone || "") || "-",
           3: (permission, account) => (
-            <select className="admin-select" disabled={savingId === account.uid} onChange={(event) => onPermissionChange(account.uid, event.target.value)} value={permission || "user"}>
+            <select className="admin-select" disabled={!canManagePermissions || savingId === account.uid} onChange={(event) => onPermissionChange(account.uid, event.target.value)} value={permission || "user"}>
               {permissionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           ),
@@ -1891,13 +1924,17 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [messageVersion, setMessageVersion] = useState(0);
-  const isFullAdmin = ["super_admin", "admin"].includes(adminPermission);
+  const isFullAdmin = hasFullAnnakutAccess(adminPermission);
   const isSuperAdmin = adminPermission === "super_admin";
+  const isVolunteerAdmin = hasVolunteerAdminAccess(adminPermission);
   const statusOptions = ["submitted", "confirmed", "preparing", "ready", "picked_up", "cancelled"];
   const permissionOptions = [
     { value: "user", label: "Normal User" },
     { value: "orders_status", label: "Orders Status" },
-    { value: "admin", label: "Admin" },
+    { value: "admin", label: "Annakut Admin (Legacy)" },
+    { value: "annakut_admin", label: "Annakut Admin" },
+    { value: "volunteer_admin", label: "Volunteer Admin" },
+    { value: "both_admin", label: "Annakut + Volunteer Admin" },
   ];
   const menuItems = (menu.categories || []).flatMap((category) =>
     (category.subcategories || []).flatMap((subcategory) =>
@@ -1915,10 +1952,10 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
         const meData = await fetchAdminMe();
         const nextPermission = meData.permission || "";
         const [accountData, offeringData, settingsData, requestData] = await Promise.all([
-          ["super_admin", "admin"].includes(nextPermission) ? fetchAdminAccounts() : Promise.resolve({ accounts: [] }),
+          hasFullAnnakutAccess(nextPermission) ? fetchAdminAccounts() : Promise.resolve({ accounts: [] }),
           fetchAdminOfferings(),
           nextPermission === "super_admin" ? fetchAdminSettings() : Promise.resolve(null),
-          ["super_admin", "admin"].includes(nextPermission) ? fetchAdminItemRequests() : Promise.resolve({ requests: [] }),
+          hasFullAnnakutAccess(nextPermission) ? fetchAdminItemRequests() : Promise.resolve({ requests: [] }),
         ]);
         if (cancelled) return;
         setAdminPermission(nextPermission);
@@ -1926,7 +1963,7 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
         setOfferings(offeringData.offerings || []);
         setItemRequests(requestData.requests || []);
         if (settingsData?.receipt_footer_message) setReceiptFooterMessage(settingsData.receipt_footer_message);
-        setActiveTab(["super_admin", "admin"].includes(nextPermission) ? "users" : "orders");
+        setActiveTab(nextPermission === "super_admin" ? "users" : "orders");
       } catch (err) {
         if (!cancelled) setError(err.message || "Unable to load admin data.");
       } finally {
@@ -1955,7 +1992,7 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
 
   function confirmAdminPromotion(uid, permission) {
     const account = accounts.find((entry) => entry.uid === uid);
-    if (account?.permission !== "user" || permission !== "admin") return true;
+    if (account?.permission !== "user" || !["annakut_admin", "volunteer_admin", "both_admin"].includes(permission)) return true;
     const label = account.full_name || account.email || "this user";
     return window.confirm(`Give ${label} full Admin access? They will be able to manage users, orders, menu items, and reports.`);
   }
@@ -2033,8 +2070,10 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
     try {
       if (editor.type === "user") {
         const response = await updateAdminUser(editor.data.uid, editor.data);
-        const permissionUpdated = await handlePermissionChange(editor.data.uid, editor.data.permission, { confirmed: true, quiet: true });
-        if (!permissionUpdated) throw new Error("Unable to update permission.");
+        if (isSuperAdmin) {
+          const permissionUpdated = await handlePermissionChange(editor.data.uid, editor.data.permission, { confirmed: true, quiet: true });
+          if (!permissionUpdated) throw new Error("Unable to update permission.");
+        }
         setAccounts((current) => current.map((account) => (account.uid === editor.data.uid ? { ...account, ...response.user, permission: editor.data.permission } : account)));
         showResult("User updated.");
       } else if (editor.type === "order") {
@@ -2107,6 +2146,20 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
     }
   }
 
+  async function handleDeleteItemRequest(itemRequest) {
+    if (!window.confirm(`Delete the request for ${itemRequest.name}? This cannot be undone.`)) return;
+    setSavingId(itemRequest.id);
+    try {
+      await deleteAdminItemRequest(itemRequest.id);
+      setItemRequests((current) => current.filter((entry) => entry.id !== itemRequest.id));
+      showResult(`${itemRequest.name} request was deleted.`);
+    } catch (err) {
+      setError(err.message || "Unable to delete this requested item.");
+    } finally {
+      setSavingId("");
+    }
+  }
+
   async function handleRemoveItem(item) {
     if (!window.confirm(`Remove ${item.name} from the menu?`)) return;
     setSavingId(item.id);
@@ -2158,21 +2211,23 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
     items: "Menu Items",
     requests: "Requested Items",
     reports: "Reports",
+    volunteer: "Volunteer Confirmations",
     settings: "Settings",
   }[activeTab] || "Admin";
 
   return (
-    <AppShell backTo="/profile" background={backgrounds.details} title={adminPageTitle} wide>
+    <AppShell backTo="/" background={backgrounds.details} title={adminPageTitle} wide>
       {loading ? <div className="confirm-card"><strong>Loading admin panel...</strong></div> : null}
       {message ? <div className="admin-feedback" role="status">{message}</div> : null}
       {error ? <div className="admin-feedback error" role="alert">{error}</div> : null}
 
       <div className="admin-tabs">
-        {isFullAdmin ? <button className={`filter-chip ${activeTab === "users" ? "active" : ""}`} onClick={() => setActiveTab("users")} type="button">Users</button> : null}
+        {isSuperAdmin ? <button className={`filter-chip ${activeTab === "users" ? "active" : ""}`} onClick={() => setActiveTab("users")} type="button">Users</button> : null}
         <button className={`filter-chip ${activeTab === "orders" ? "active" : ""}`} onClick={() => setActiveTab("orders")} type="button">Orders</button>
         {isFullAdmin ? <button className={`filter-chip ${activeTab === "items" ? "active" : ""}`} onClick={() => setActiveTab("items")} type="button">Menu Items</button> : null}
         {isFullAdmin ? <button className={`filter-chip ${activeTab === "requests" ? "active" : ""}`} onClick={handleOpenItemRequests} type="button">Requested Items</button> : null}
         {isFullAdmin ? <button className={`filter-chip ${activeTab === "reports" ? "active" : ""}`} onClick={() => setActiveTab("reports")} type="button">Reports</button> : null}
+        {isVolunteerAdmin ? <button className={`filter-chip ${activeTab === "volunteer" ? "active" : ""}`} onClick={() => setActiveTab("volunteer")} type="button">Volunteer Confirmations</button> : null}
         {isSuperAdmin ? <button className={`filter-chip ${activeTab === "settings" ? "active" : ""}`} onClick={() => setActiveTab("settings")} type="button">Settings</button> : null}
       </div>
 
@@ -2208,9 +2263,11 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
 
       {activeTab === "reports" && isFullAdmin ? <AdminReports menuItems={menuItems} offerings={offerings} /> : null}
 
-      {activeTab === "requests" && isFullAdmin ? <AdminItemRequests itemRequests={itemRequests} menu={menu} onApprove={handleApproveItemRequest} savingId={savingId} /> : null}
+      {activeTab === "volunteer" && isVolunteerAdmin ? <VolunteerAdminContent /> : null}
 
-      {!['settings', 'reports', 'requests'].includes(activeTab) ? <div className="list-panel admin-table-panel">
+      {activeTab === "requests" && isFullAdmin ? <AdminItemRequests itemRequests={itemRequests} menu={menu} onApprove={handleApproveItemRequest} onDelete={handleDeleteItemRequest} savingId={savingId} /> : null}
+
+      {!['settings', 'reports', 'requests', 'volunteer'].includes(activeTab) ? <div className="list-panel admin-table-panel">
         <strong>{activeTab === "users" ? "Registered Users" : activeTab === "items" ? "Firebase Menu Items" : "Orders"}</strong>
         <div className="admin-mobile-export-actions">
           <button className="mini-button" onClick={() => document.querySelector(".admin-desktop-table .buttons-pdf")?.click()} type="button">Export PDF</button>
@@ -2219,6 +2276,7 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
         <AdminMobileCards
           accounts={accounts}
           activeTab={activeTab}
+          canManagePermissions={isSuperAdmin}
           menuItems={menuItems}
           offerings={offerings}
           onCancelOrder={handleCancelOrder}
@@ -2236,6 +2294,7 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
           <AdminDataTable
             accounts={accounts}
             activeTab={activeTab}
+            canManagePermissions={isSuperAdmin}
             key={activeTab}
             menuItems={menuItems}
             offerings={offerings}
@@ -2258,7 +2317,7 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
           <form className="modal-card admin-edit-modal" onClick={(event) => event.stopPropagation()} onSubmit={(event) => { event.preventDefault(); saveEditor(); }}>
             <div className="modal-head"><div><strong>{editor.type === "order" ? editor.data.devotee?.full_name || "Devotee" : `Edit ${editor.type}`}</strong><p>{editor.type === "order" ? "Modify this offering's items." : "Changes are saved directly to Firebase."}</p></div><button className="modal-close" onClick={() => setEditor(null)} type="button">x</button></div>
             <div className="modal-body">
-              {editor.type === "user" ? <><label className="field-card"><span>Full Name</span><input className="field-input" onChange={(event) => setEditor({ ...editor, data: { ...editor.data, full_name: event.target.value } })} value={editor.data.full_name || ""} /></label><label className="field-card"><span>Email</span><input className="field-input" onChange={(event) => setEditor({ ...editor, data: { ...editor.data, email: event.target.value } })} type="email" value={editor.data.email || ""} /></label><label className="field-card"><span>Phone</span><input className="field-input" onChange={(event) => setEditor({ ...editor, data: { ...editor.data, phone: event.target.value } })} value={editor.data.phone || ""} /></label><label className="field-card"><span>Address</span><textarea className="field-input textarea" onChange={(event) => setEditor({ ...editor, data: { ...editor.data, address: event.target.value } })} value={editor.data.address || ""} /></label><label className="field-card"><span>Permission</span><select className="admin-select" onChange={(event) => setEditor({ ...editor, data: { ...editor.data, permission: event.target.value } })} value={editor.data.permission || "user"}>{permissionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label></> : null}
+              {editor.type === "user" ? <><label className="field-card"><span>Full Name</span><input className="field-input" onChange={(event) => setEditor({ ...editor, data: { ...editor.data, full_name: event.target.value } })} value={editor.data.full_name || ""} /></label><label className="field-card"><span>Email</span><input className="field-input" onChange={(event) => setEditor({ ...editor, data: { ...editor.data, email: event.target.value } })} type="email" value={editor.data.email || ""} /></label><label className="field-card"><span>Phone</span><input className="field-input" onChange={(event) => setEditor({ ...editor, data: { ...editor.data, phone: event.target.value } })} value={editor.data.phone || ""} /></label><label className="field-card"><span>Address</span><textarea className="field-input textarea" onChange={(event) => setEditor({ ...editor, data: { ...editor.data, address: event.target.value } })} value={editor.data.address || ""} /></label><label className="field-card"><span>Permission</span><select className="admin-select" disabled={!isSuperAdmin} onChange={(event) => setEditor({ ...editor, data: { ...editor.data, permission: event.target.value } })} value={editor.data.permission || "user"}>{permissionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label></> : null}
               {editor.type === "item" ? <label className="field-card"><span>Item Name</span><input className="field-input" onChange={(event) => setEditor({ ...editor, data: { ...editor.data, name: event.target.value } })} value={editor.data.name || ""} /></label> : null}
               {editor.type === "order" ? (
                 <>
@@ -2682,7 +2741,7 @@ function ReviewPage({ firebaseUser, cart, detailsState, setCartState, setDetails
           </div>
           <div className="summary-row receipt-total">
             <span>Total items</span>
-            <strong>{totalQty(cart)}</strong>
+            <strong>{items.length}</strong>
           </div>
         </div>
 
@@ -2784,7 +2843,7 @@ function ConfirmedPage({ cart, detailsState, setCartState, setDetailsState }) {
           </div>
           <div className="summary-row receipt-total">
             <span>Total items</span>
-            <strong>{totalQty(cart)}</strong>
+            <strong>{items.length}</strong>
           </div>
         </div>
 
@@ -2806,7 +2865,7 @@ function ConfirmedPage({ cart, detailsState, setCartState, setDetailsState }) {
         <ActionButton onClick={finishSession} secondary>
           Done
         </ActionButton>
-        <ActionButton onClick={() => navigate("/")} secondary>
+        <ActionButton onClick={() => navigate("/annakut")} secondary>
           Back to Home
         </ActionButton>
       </div>
@@ -2878,6 +2937,7 @@ function LoginRulesModal({ onClose }) {
 }
 
 export default function App() {
+  const location = useLocation();
   const [menu, setMenu] = useState({ categories: [] });
   const [menuLoading, setMenuLoading] = useState(true);
   const [menuError, setMenuError] = useState("");
@@ -2941,7 +3001,9 @@ export default function App() {
   }, [holdExpiredMessage]);
 
   useEffect(() => {
+    const authTimeoutId = window.setTimeout(() => setAuthReady(true), 10000);
     const unsubscribe = onAuthChanged((user) => {
+      window.clearTimeout(authTimeoutId);
       setFirebaseUser(user);
       if (user?.uid || user?.email) {
         setSessionAuth({
@@ -2958,7 +3020,10 @@ export default function App() {
       setAuthReady(true);
     });
 
-    return unsubscribe;
+    return () => {
+      window.clearTimeout(authTimeoutId);
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -3014,7 +3079,7 @@ export default function App() {
         setAccessState({
           loading: false,
           permission: profileData.profile?.permission || "user",
-          offering: offeringData.offerings?.[0] || null,
+          offering: offeringData.offerings?.find((offering) => offering.status !== "cancelled") || null,
         });
       })
       .catch(() => {
@@ -3111,16 +3176,16 @@ export default function App() {
     return <AppShell background={backgrounds.home} title="Loading" subtitle="Preparing the seva flow" />;
   }
 
-  const hasStaffAccess = ["super_admin", "admin", "orders_status"].includes(accessState.permission);
-  if (firebaseUser && accessState.offering && !hasStaffAccess) {
-    return <SubmittedOfferingPage offering={accessState.offering} setCartState={setCartState} setDetailsState={setDetailsState} />;
-  }
+  const hasStaffAccess = hasAnnakutAdminAccess(accessState.permission);
 
-  if (menuLoading) {
+  const menuRoutes = ["/annakut", "/category", "/subcategory", "/food-list", "/cart", "/details", "/review", "/admin"];
+  const routeNeedsMenu = menuRoutes.includes(location.pathname);
+
+  if (routeNeedsMenu && menuLoading) {
     return <AppShell background={backgrounds.home} title="Loading" subtitle="Preparing the seva flow" />;
   }
 
-  if (menuError) {
+  if (routeNeedsMenu && menuError) {
     return (
       <AppShell background={backgrounds.home} title="Unable to Load" subtitle="Menu data could not be fetched">
         <div className="empty-state">
@@ -3135,11 +3200,11 @@ export default function App() {
     <>
       {holdSeconds > 0 ? <HoldCountdown seconds={holdSeconds} /> : null}
       {holdExpiredMessage ? <div className="hold-expired-toast" role="alert">{holdExpiredMessage}</div> : null}
-      {showLoginRules && firebaseUser && !hasStaffAccess ? <LoginRulesModal onClose={() => { window.sessionStorage.setItem(`annakut_rules_ack_${firebaseUser.uid}`, "true"); setShowLoginRules(false); }} /> : null}
+      {showLoginRules && firebaseUser && !hasStaffAccess && location.pathname !== "/" && !location.pathname.startsWith("/volunteer") ? <LoginRulesModal onClose={() => { window.sessionStorage.setItem(`annakut_rules_ack_${firebaseUser.uid}`, "true"); setShowLoginRules(false); }} /> : null}
       <Routes>
       <Route
         element={
-          <HomePage
+          firebaseUser ? <PortalChooser permission={accessState.permission} /> : <HomePage
             availability={availability}
             cart={cart}
             cartCount={totalQty(cart)}
@@ -3151,6 +3216,12 @@ export default function App() {
         }
         path="/"
       />
+      <Route
+        element={firebaseUser && accessState.offering && !hasStaffAccess ? <SubmittedOfferingPage offering={accessState.offering} setCartState={setCartState} setDetailsState={setDetailsState} /> : <HomePage availability={availability} cart={cart} cartCount={totalQty(cart)} firebaseUser={firebaseUser} menu={menu} setCartState={setCartState} setDetailsState={setDetailsState} />}
+        path="/annakut"
+      />
+      <Route element={firebaseUser ? <VolunteerHome permission={accessState.permission} /> : <Navigate replace to="/" />} path="/volunteer" />
+      <Route element={<Navigate replace to="/admin" />} path="/volunteer/admin" />
       <Route element={<RulesPage firebaseUser={firebaseUser} />} path="/rules" />
       <Route element={<CategoryPage cartCount={totalQty(cart)} firebaseUser={firebaseUser} menu={menu} />} path="/category" />
       <Route element={<SubcategoryPage cartCount={totalQty(cart)} firebaseUser={firebaseUser} menu={menu} />} path="/subcategory" />
@@ -3179,7 +3250,14 @@ export default function App() {
         }
         path="/profile"
       />
-      <Route element={<AdminPage firebaseUser={firebaseUser} menu={menu} setMenu={setMenu} />} path="/admin" />
+      <Route
+        element={firebaseUser
+          ? hasAnnakutAdminAccess(accessState.permission)
+            ? <AdminPage firebaseUser={firebaseUser} menu={menu} setMenu={setMenu} />
+            : <VolunteerAdmin permission={accessState.permission} />
+          : <Navigate replace to="/" />}
+        path="/admin"
+      />
       <Route
         element={<DetailsPage cart={cart} detailsState={detailsState} firebaseUser={firebaseUser} setDetailsState={setDetailsState} />}
         path="/details"

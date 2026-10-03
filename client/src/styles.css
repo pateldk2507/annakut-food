@@ -335,8 +335,8 @@ button {
 
 .rule-icon,
 .selection-icon {
-  width: 62px;
-  height: 62px;
+  width: 100px;
+  height: 100px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1019,7 +1019,7 @@ button {
 
 .field-input {
   width: 100%;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgb(91 52 52 / 35%);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.14);
   color: inherit;
@@ -1709,6 +1709,245 @@ button {
   font-weight: 800;
 }
 
+.portal-tile-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+@media (max-width: 720px) {
+  .portal-tile-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.volunteer-shell .screen-paper {
+  background: #fffaf1;
+  color: #3d1d13;
+}
+
+.volunteer-shell .selection-tile,
+.volunteer-shell .list-panel,
+.volunteer-shell .field-card {
+  border-color: rgba(104, 56, 27, 0.16);
+  background: rgba(255, 252, 246, 0.9);
+  color: #3d1d13;
+}
+
+.volunteer-seva-list {
+  display: grid;
+  gap: 12px;
+}
+
+.volunteer-confirmations {
+  display: grid;
+  gap: 14px;
+}
+
+.volunteer-confirmation-card {
+  display: grid;
+  gap: 16px;
+}
+
+.volunteer-confirmation-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.volunteer-confirmation-card > header div {
+  display: grid;
+  gap: 4px;
+}
+
+.volunteer-confirmation-card > header strong {
+  font-size: 1.05rem;
+}
+
+.volunteer-confirmation-card > header div span,
+.volunteer-confirmation-card > footer {
+  color: rgba(61, 29, 19, 0.68);
+  font-size: 0.8rem;
+}
+
+.volunteer-confirmation-dates {
+  display: grid;
+  gap: 8px;
+}
+
+.volunteer-confirmation-dates > div {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(150px, auto);
+  gap: 14px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 248, 234, 0.78);
+}
+
+.volunteer-confirmation-dates > div span {
+  text-align: right;
+}
+
+@media (max-width: 600px) {
+  .volunteer-confirmation-dates > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .volunteer-confirmation-dates > div span {
+    text-align: left;
+  }
+}
+
+.volunteer-seva-card {
+  display: grid;
+  gap: 10px;
+}
+
+.volunteer-seva-card p {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.volunteer-seva-card p b {
+  color: #7d2a1b;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.volunteer-seva-title,
+.volunteer-role-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.volunteer-seva-title > div,
+.volunteer-role-card > div {
+  display: grid;
+  gap: 3px;
+}
+
+.volunteer-seva-title > div > span,
+.volunteer-role-card span,
+.volunteer-seva-time {
+  color: rgba(61, 29, 19, 0.68);
+  font-size: 0.8rem;
+}
+
+.volunteer-primary {
+  border-color: rgba(125, 21, 14, 0.4);
+  background: linear-gradient(180deg, #b63b22, #7d150e);
+  color: #fff7ef;
+  font-weight: 800;
+}
+
+.availability-day {
+  display: grid;
+  gap: 10px;
+}
+
+.availability-day > label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-transform: capitalize;
+}
+
+.availability-day > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.volunteer-admin-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.volunteer-admin-form > strong,
+.volunteer-admin-form > textarea,
+.volunteer-admin-form > .admin-inline-actions {
+  grid-column: 1 / -1;
+}
+
+.volunteer-admin-form label {
+  display: grid;
+  gap: 5px;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.volunteer-report-table {
+  margin-top: 14px;
+  overflow-x: auto;
+}
+
+.volunteer-availability-filters {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.volunteer-availability-filters label {
+  display: grid;
+  gap: 6px;
+  color: #7d2a1b;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+@media (max-width: 620px) {
+  .volunteer-admin-form {
+    grid-template-columns: 1fr;
+  }
+
+  .volunteer-availability-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .volunteer-admin-form > * {
+    grid-column: 1;
+  }
+
+  .volunteer-seva-title,
+  .volunteer-role-card {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media print {
+  .volunteer-shell .screen-header,
+  .volunteer-shell .admin-tabs,
+  .volunteer-shell .admin-inline-actions,
+  .volunteer-shell .admin-feedback {
+    display: none !important;
+  }
+
+  .volunteer-shell .device-frame,
+  .volunteer-shell .screen,
+  .volunteer-shell .screen-content {
+    width: 100%;
+    max-width: none;
+    min-height: 0;
+    overflow: visible;
+    box-shadow: none;
+  }
+
+  .volunteer-report-table {
+    overflow: visible;
+  }
+}
+
 .admin-mobile-card > span {
   display: grid;
   gap: 3px;
@@ -2112,5 +2351,428 @@ button {
     display: grid;
     grid-template-columns: 0.85fr 1.15fr;
     align-items: start;
+  }
+}
+
+/* Date-based volunteer seva workflow */
+.seva-wizard-shell {
+  --seva-gold: #b87418;
+  --seva-deep-gold: #8a4c0b;
+  --seva-ink: #4c2d16;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: #fff9eb;
+  color: var(--seva-ink);
+  font-family: "Manrope", sans-serif;
+}
+
+.seva-wizard-frame {
+  position: relative;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+
+.seva-wizard-bg {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  pointer-events: none;
+}
+
+.seva-wizard-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 820px);
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: max(18px, env(safe-area-inset-top)) 18px max(24px, env(safe-area-inset-bottom));
+}
+
+.seva-wizard-content > header {
+  position: relative;
+  flex: 0 0 auto;
+  text-align: center;
+}
+
+.seva-wizard-content > header h1 {
+  margin: 0;
+  color: #7c4008;
+  font-family: "Cinzel", "Cormorant Garamond", serif;
+  font-size: clamp(2rem, 7vw, 3rem);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.seva-wizard-content .gold-line {
+  width: 92px;
+  margin: 8px auto 0;
+}
+
+.seva-wizard-back {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid rgba(160, 94, 19, 0.28);
+  border-radius: 50%;
+  background: rgba(255, 253, 244, 0.78);
+  color: #75400e;
+  font-size: 1.45rem;
+  cursor: pointer;
+  box-shadow: 0 5px 16px rgba(104, 61, 15, 0.12);
+}
+
+.seva-progress {
+  display: flex;
+  justify-content: center;
+  gap: 9px;
+  margin: 18px 0;
+}
+
+.seva-progress span {
+  width: 9px;
+  height: 9px;
+  border: 1px solid #c89652;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.seva-progress span.active,
+.seva-progress span.complete {
+  background: var(--seva-gold);
+}
+
+.seva-progress span.active {
+  box-shadow: 0 0 0 4px rgba(184, 116, 24, 0.14);
+}
+
+.seva-flow-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.seva-flow-card {
+  width: min(100%, 690px);
+  margin: 0 auto;
+  padding: clamp(20px, 5vw, 38px);
+  border: 1px solid rgba(183, 116, 25, 0.28);
+  border-radius: 24px;
+  background: rgba(255, 253, 246, 0.88);
+  box-shadow: 0 18px 50px rgba(117, 70, 18, 0.13);
+  backdrop-filter: blur(8px);
+}
+
+.seva-flow-heading {
+  margin-bottom: 22px;
+  text-align: center;
+}
+
+.seva-flow-heading h2 {
+  margin: 0 0 7px;
+  color: #713b0b;
+  font-family: "Cinzel", "Cormorant Garamond", serif;
+  font-size: clamp(1.45rem, 5vw, 2rem);
+}
+
+.seva-flow-heading p {
+  margin: 0;
+  color: #755d47;
+  line-height: 1.55;
+}
+
+.seva-date-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.seva-date-grid button {
+  min-height: 82px;
+  padding: 10px 5px;
+  border: 1px solid rgba(173, 105, 25, 0.28);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.7);
+  color: #71451e;
+  cursor: pointer;
+}
+
+.seva-date-grid button span,
+.seva-date-grid button strong,
+.seva-date-grid button em {
+  display: block;
+}
+
+.seva-date-grid button span {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.seva-date-grid button strong {
+  margin-top: 4px;
+  font-size: 0.96rem;
+}
+
+.seva-date-grid button em {
+  margin-top: 4px;
+  font-size: 0.65rem;
+  font-style: normal;
+}
+
+.seva-date-grid button.selected {
+  border-color: #9d5b0f;
+  background: linear-gradient(145deg, #cf9135, #a45c0c);
+  color: #fffdf5;
+  box-shadow: 0 8px 18px rgba(156, 87, 9, 0.22);
+}
+
+.seva-main-button,
+.seva-secondary-button,
+.seva-choice-card {
+  width: 100%;
+  border-radius: 13px;
+  cursor: pointer;
+}
+
+.seva-main-button {
+  margin-top: 22px;
+  padding: 14px 18px;
+  border: 0;
+  background: linear-gradient(135deg, #c88727, #995309);
+  color: white;
+  font-weight: 800;
+  box-shadow: 0 9px 22px rgba(143, 76, 7, 0.22);
+}
+
+.seva-main-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  box-shadow: none;
+}
+
+.seva-secondary-button {
+  margin-top: 11px;
+  padding: 13px 18px;
+  border: 1px solid #b87621;
+  background: rgba(255, 251, 239, 0.8);
+  color: #81450c;
+  font-weight: 700;
+}
+
+.seva-inline-back {
+  margin: -6px 0 18px;
+  border: 0;
+  background: transparent;
+  color: #8b4d0d;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.seva-time-days,
+.seva-review-list,
+.seva-details-form {
+  display: grid;
+  gap: 14px;
+}
+
+.seva-time-days > article,
+.seva-review-card {
+  padding: 15px;
+  border: 1px solid rgba(177, 108, 26, 0.22);
+  border-radius: 16px;
+  background: rgba(255, 249, 234, 0.72);
+}
+
+.seva-time-day-head,
+.seva-time-slot > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.seva-time-day-head span,
+.seva-time-slot span {
+  display: block;
+  color: #9c754f;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.seva-time-day-head button,
+.seva-time-slot button {
+  border: 0;
+  background: transparent;
+  color: #a0432c;
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.seva-time-slot {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.seva-time-slot > div {
+  grid-column: 1 / -1;
+}
+
+.seva-time-slot label,
+.seva-details-form label {
+  display: grid;
+  gap: 6px;
+  color: #65401f;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.seva-time-slot input,
+.seva-details-form input {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(151, 87, 16, 0.35);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.88);
+  color: #482b14;
+  font: inherit;
+}
+
+.seva-add-slot {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px dashed #b87827;
+  border-radius: 10px;
+  background: transparent;
+  color: #895016;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.seva-review-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px 15px;
+}
+
+.seva-review-card strong {
+  grid-row: 1 / span 4;
+}
+
+.seva-review-card span {
+  text-align: right;
+}
+
+.seva-error {
+  margin-top: 14px;
+  padding: 11px 13px;
+  border-radius: 10px;
+  background: #fff0eb;
+  color: #942f1d;
+  font-weight: 700;
+}
+
+.seva-centered {
+  text-align: center;
+}
+
+.seva-change-icon,
+.seva-check {
+  display: grid;
+  width: 66px;
+  height: 66px;
+  margin: 0 auto 18px;
+  place-items: center;
+  border: 2px solid #bd7c26;
+  border-radius: 50%;
+  color: #9b580e;
+  font-family: "Cinzel", serif;
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.seva-choice-card {
+  display: grid;
+  gap: 5px;
+  margin-top: 12px;
+  padding: 18px;
+  border: 1px solid rgba(167, 98, 18, 0.28);
+  background: rgba(255, 250, 237, 0.82);
+  color: #71400f;
+  text-align: left;
+}
+
+.seva-choice-card strong {
+  font-family: "Cinzel", serif;
+  font-size: 1.05rem;
+}
+
+.seva-choice-card span {
+  color: #80664d;
+  font-size: 0.82rem;
+}
+
+.seva-details-form {
+  margin-top: 20px;
+}
+
+.seva-thanks .seva-flow-heading strong {
+  display: block;
+  margin-top: 14px;
+  color: #8c4e0d;
+  font-family: "Cinzel", serif;
+}
+
+.seva-check {
+  border-color: #7f913e;
+  color: #64752b;
+}
+
+@media (min-width: 600px) {
+  .seva-date-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 420px) {
+  .seva-wizard-content {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .seva-flow-card {
+    padding: 18px 14px;
+    border-radius: 18px;
+  }
+
+  .seva-date-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .seva-review-card {
+    grid-template-columns: 1fr;
+  }
+
+  .seva-review-card strong {
+    grid-row: auto;
+  }
+
+  .seva-review-card span {
+    text-align: left;
   }
 }

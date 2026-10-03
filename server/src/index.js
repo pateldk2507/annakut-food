@@ -1,8 +1,8 @@
-import "dotenv/config";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import dotenv from "dotenv";
 import express from "express";
 import { getFirebaseAdmin } from "./firebase.js";
 import { DEFAULT_RECEIPT_FOOTER, sendConfirmationEmail, sendReminderEmail } from "./mailer.js";
@@ -13,6 +13,7 @@ const HOLD_MINUTES = 15;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..", "..");
+dotenv.config({ path: path.resolve(__dirname, "..", ".env") });
 const menuPath = path.resolve(rootDir, "frontend", "static", "seva", "data", "menu.json");
 const assetDir = path.resolve(rootDir, "frontend", "static", "assets");
 const clientDistDir = path.resolve(rootDir, "client", "dist");
@@ -133,11 +134,23 @@ function getAdminEmails() {
 
 function normalizePermission(value = "") {
   const permission = String(value || "").trim().toLowerCase();
-  if (["super_admin", "admin", "orders_status"].includes(permission)) {
+  if (["super_admin", "admin", "annakut_admin", "volunteer_admin", "both_admin", "orders_status"].includes(permission)) {
     return permission;
   }
 
   return "user";
+}
+
+function hasAnnakutAccess(permission) {
+  return ["super_admin", "admin", "annakut_admin", "both_admin", "orders_status"].includes(permission);
+}
+
+function hasFullAnnakutAccess(permission) {
+  return ["super_admin", "admin", "annakut_admin", "both_admin"].includes(permission);
+}
+
+function hasVolunteerAdminAccess(permission) {
+  return ["super_admin", "volunteer_admin", "both_admin"].includes(permission);
 }
 
 async function getRequestPermission(decodedToken) {
@@ -152,7 +165,7 @@ async function getRequestPermission(decodedToken) {
 
 async function requireAdmin(req, res, next) {
   const permission = await getRequestPermission(req.authUser);
-  if (!["super_admin", "admin", "orders_status"].includes(permission)) {
+  if (!hasAnnakutAccess(permission)) {
     res.status(403).json({ ok: false, error: "Admin or orders status access is required." });
     return;
   }
@@ -163,8 +176,19 @@ async function requireAdmin(req, res, next) {
 
 async function requireFullAdmin(req, res, next) {
   const permission = await getRequestPermission(req.authUser);
-  if (!["super_admin", "admin"].includes(permission)) {
+  if (!hasFullAnnakutAccess(permission)) {
     res.status(403).json({ ok: false, error: "Full admin access is required." });
+    return;
+  }
+
+  req.adminPermission = permission;
+  next();
+}
+
+async function requireVolunteerAdmin(req, res, next) {
+  const permission = await getRequestPermission(req.authUser);
+  if (!hasVolunteerAdminAccess(permission)) {
+    res.status(403).json({ ok: false, error: "Volunteer admin access is required." });
     return;
   }
 
@@ -872,6 +896,75 @@ app.post("/api/offering/:offeringId/cancel", requireFirebaseAuth, async (req, re
   });
 });
 
+app.get("/api/volunteer/availability", requireFirebaseAuth, async (req, res) => {
+  const uid = getVerifiedUserId(req.authUser);
+  const { db } = getFirebaseAdmin();
+  const snapshot = await db.ref(`volunteerAvailability/${uid}`).get();
+  res.json({ ok: true, availability: snapshot.val() || { days: {} } });
+});
+
+app.put("/api/volunteer/availability", requireFirebaseAuth, async (req, res) => {
+  const allowedDays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+  const inputDays = req.body?.days || {};
+  const days = Object.fromEntries(allowedDays.map((day) => [day, {
+    available: Boolean(inputDays[day]?.available),
+    from: String(inputDays[day]?.from || "").slice(0, 5),
+    to: String(inputDays[day]?.to || "").slice(0, 5),
+  }]));
+  const inputDates = req.body?.dates && typeof req.body.dates === "object" ? req.body.dates : {};
+  const dates = {};
+  for (const [date, inputSlots] of Object.entries(inputDates)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Array.isArray(inputSlots) || !inputSlots.length) continue;
+    const slots = inputSlots.map((slot) => ({ from: String(slot?.from || "").slice(0, 5), to: String(slot?.to || "").slice(0, 5) }));
+    if (slots.some((slot) => !/^\d{2}:\d{2}$/.test(slot.from) || !/^\d{2}:\d{2}$/.test(slot.to) || slot.to <= slot.from)) {
+      res.status(400).json({ ok: false, error: `Invalid time slot for ${date}.` });
+      return;
+    }
+    const ordered = [...slots].sort((left, right) => left.from.localeCompare(right.from));
+    if (ordered.some((slot, index) => index > 0 && slot.from < ordered[index - 1].to)) {
+      res.status(400).json({ ok: false, error: `Time slots overlap for ${date}.` });
+      return;
+    }
+    dates[date] = ordered;
+  }
+  const uid = getVerifiedUserId(req.authUser);
+  const profile = await getUserProfile(uid);
+  const availability = {
+    uid,
+    days,
+    dates,
+    fullName: String(req.body?.full_name || profile?.fullName || "").trim(),
+    phone: normalizePhone(req.body?.phone || profile?.phone),
+    updatedAt: nowIso(),
+  };
+  const { db } = getFirebaseAdmin();
+  await db.ref(`volunteerAvailability/${uid}`).set(availability);
+  res.json({ ok: true, availability });
+});
+
+app.get("/api/volunteer/admin/availability", requireFirebaseAuth, requireVolunteerAdmin, async (_req, res) => {
+  const { db } = getFirebaseAdmin();
+  const [availabilitySnapshot, users] = await Promise.all([db.ref("volunteerAvailability").get(), getAllUsers()]);
+  const availabilityByUid = availabilitySnapshot.val() || {};
+  const usersByUid = new Map(users.map((user) => [user.uid, user]));
+  const recordUids = new Set([...usersByUid.keys(), ...Object.keys(availabilityByUid)]);
+  const records = [...recordUids].map((uid) => {
+    const user = usersByUid.get(uid) || {};
+    const savedAvailability = availabilityByUid[uid] || {};
+    return {
+      uid,
+      full_name: savedAvailability.fullName || user.fullName || user.email || "Volunteer",
+      email: user.email || "",
+      phone: savedAvailability.phone || user.phone || "",
+      days: savedAvailability.days || {},
+      dates: savedAvailability.dates || {},
+      updatedAt: savedAvailability.updatedAt || "",
+    };
+  }).filter((record) => Object.keys(record.dates).length || Object.values(record.days).some((day) => day?.available));
+  records.sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)));
+  res.json({ ok: true, records });
+});
+
 app.get("/api/admin/me", requireFirebaseAuth, requireAdmin, async (req, res) => {
   res.json({
     ok: true,
@@ -930,6 +1023,19 @@ app.get("/api/admin/item-requests", requireFirebaseAuth, requireFullAdmin, async
   res.json({ ok: true, requests });
 });
 
+app.delete("/api/admin/item-requests/:requestId", requireFirebaseAuth, requireFullAdmin, async (req, res) => {
+  const requestId = String(req.params.requestId || "").trim();
+  const { db } = getFirebaseAdmin();
+  const requestRef = db.ref(`itemRequests/${requestId}`);
+  const snapshot = await requestRef.get();
+  if (!snapshot.exists()) {
+    res.status(404).json({ ok: false, error: "Requested item was not found." });
+    return;
+  }
+  await requestRef.remove();
+  res.json({ ok: true });
+});
+
 app.post("/api/admin/item-requests/:requestId/approve", requireFirebaseAuth, requireFullAdmin, async (req, res) => {
   const requestId = String(req.params.requestId || "").trim();
   const categoryId = String(req.body?.category_id || "").trim();
@@ -984,7 +1090,7 @@ app.post("/api/admin/item-requests/:requestId/approve", requireFirebaseAuth, req
   res.json({ ok: true, item: createdItem, menu: result.snapshot.val(), request: { ...itemRequest, id: requestId, status: "approved", categoryId, subcategoryId, itemId: createdItem.id, approvedAt } });
 });
 
-app.post("/api/admin/users/:uid/permission", requireFirebaseAuth, requireFullAdmin, async (req, res) => {
+app.post("/api/admin/users/:uid/permission", requireFirebaseAuth, requireSuperAdmin, async (req, res) => {
   const uid = String(req.params.uid || "").trim();
   req.auditTargetUid = uid || null;
   const permission = normalizePermission(req.body?.permission);
@@ -1000,11 +1106,6 @@ app.post("/api/admin/users/:uid/permission", requireFirebaseAuth, requireFullAdm
     return;
   }
   const existingPermission = normalizePermission(snapshot.val()?.permission);
-  if (req.adminPermission !== "super_admin" && (permission === "super_admin" || existingPermission === "super_admin")) {
-    res.status(403).json({ ok: false, error: "Only a super admin can assign or modify super admin access." });
-    return;
-  }
-
   await db.ref(`users/${uid}`).update({
     permission,
     permissionUpdatedAt: nowIso(),
@@ -1362,7 +1463,7 @@ app.post("/api/save-offering", requireFirebaseAuth, async (req, res) => {
   }
 
   const uid = getVerifiedUserId(req.authUser);
-  const existingUserOffering = (await getAllOfferings()).find((offering) => offering.uid === uid);
+  const existingUserOffering = (await getAllOfferings()).find((offering) => offering.uid === uid && offering.status !== "cancelled");
   if (existingUserOffering) {
     res.status(409).json({
       ok: false,
@@ -1435,7 +1536,12 @@ app.post("/api/save-offering", requireFirebaseAuth, async (req, res) => {
   };
 
   const existingProfile = (await getUserProfile(uid)) || {};
-  const createResult = await db.ref(`offerings/${offeringId}`).transaction((current) => current || offering);
+  const createResult = await db.ref(`offerings/${offeringId}`).transaction((current) => {
+    if (!current || current.status === "cancelled") {
+      return offering;
+    }
+    return undefined;
+  });
   if (!createResult.committed || createResult.snapshot.val()?.receiptNo !== receiptNo) {
     res.status(409).json({
       ok: false,

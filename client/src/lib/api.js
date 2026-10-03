@@ -2,6 +2,8 @@ import { getCurrentIdToken } from "./firebase";
 
 async function request(path, options = {}) {
   const requiresAuth = Boolean(options.requiresAuth);
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 15000);
   const nextHeaders = {
     "Content-Type": "application/json",
     ...(options.headers || {}),
@@ -11,20 +13,28 @@ async function request(path, options = {}) {
     nextHeaders.Authorization = `Bearer ${await getCurrentIdToken()}`;
   }
 
-  const response = await fetch(path, {
-    headers: nextHeaders,
-    ...options,
-  });
+  try {
+    const response = await fetch(path, {
+      ...options,
+      headers: nextHeaders,
+      signal: options.signal || controller.signal,
+    });
 
-  const data = await response.json();
-  if (!response.ok || data.ok === false) {
-    const error = new Error(data.error || "Request failed");
-    error.data = data;
-    error.status = response.status;
+    const data = await response.json();
+    if (!response.ok || data.ok === false) {
+      const error = new Error(data.error || "Request failed");
+      error.data = data;
+      error.status = response.status;
+      throw error;
+    }
+
+    return data;
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error("The server request timed out. Please check that the Node server and Firebase connection are running.");
     throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
   }
-
-  return data;
 }
 
 export function fetchMenu() {
@@ -87,6 +97,22 @@ export function saveProfile(payload) {
   });
 }
 
+export function fetchVolunteerAvailability() {
+  return request("/api/volunteer/availability", { requiresAuth: true });
+}
+
+export function saveVolunteerAvailability(payload) {
+  return request("/api/volunteer/availability", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+    requiresAuth: true,
+  });
+}
+
+export function fetchVolunteerAdminAvailability() {
+  return request("/api/volunteer/admin/availability", { requiresAuth: true });
+}
+
 export function findOfferings(email = "") {
   return request("/api/find-offerings", {
     method: "POST",
@@ -139,6 +165,13 @@ export function approveAdminItemRequest(requestId, payload) {
   return request(`/api/admin/item-requests/${encodeURIComponent(requestId)}/approve`, {
     method: "POST",
     body: JSON.stringify(payload),
+    requiresAuth: true,
+  });
+}
+
+export function deleteAdminItemRequest(requestId) {
+  return request(`/api/admin/item-requests/${encodeURIComponent(requestId)}`, {
+    method: "DELETE",
     requiresAuth: true,
   });
 }
