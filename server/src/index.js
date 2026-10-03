@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 import express from "express";
 import { getFirebaseAdmin } from "./firebase.js";
-import { DEFAULT_RECEIPT_FOOTER, sendConfirmationEmail, sendReminderEmail } from "./mailer.js";
+import { DEFAULT_RECEIPT_FOOTER, sendConfirmationEmail, sendNotificationEmail, sendReminderEmail } from "./mailer.js";
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
@@ -196,6 +196,16 @@ async function requireVolunteerAdmin(req, res, next) {
   next();
 }
 
+async function requireAnyAdmin(req, res, next) {
+  const permission = await getRequestPermission(req.authUser);
+  if (!hasAnnakutAccess(permission) && !hasVolunteerAdminAccess(permission)) {
+    res.status(403).json({ ok: false, error: "Admin access is required." });
+    return;
+  }
+  req.adminPermission = permission;
+  next();
+}
+
 async function requireSuperAdmin(req, res, next) {
   const permission = await getRequestPermission(req.authUser);
   if (permission !== "super_admin") {
@@ -303,6 +313,13 @@ async function getAllUsers() {
   const { db } = getFirebaseAdmin();
   const snapshot = await db.ref("users").get();
   return Object.values(snapshot.val() || {});
+}
+
+async function getNotificationRecipients(type) {
+  const { db } = getFirebaseAdmin();
+  const [settingSnapshot, users] = await Promise.all([db.ref(`settings/notifications/${type}`).get(), getAllUsers()]);
+  const selectedUids = new Set(Object.keys(settingSnapshot.val() || {}));
+  return users.filter((user) => selectedUids.has(user.uid) && user.email).map((user) => user.email);
 }
 
 async function getAllHolds() {
@@ -708,6 +725,26 @@ app.post("/api/item-requests", requireFirebaseAuth, async (req, res) => {
   res.status(201).json({ ok: true, request: itemRequest });
 });
 
+app.post("/api/suggestions", requireFirebaseAuth, async (req, res) => {
+  const message = String(req.body?.message || "").trim().replace(/\s+/g, " ");
+  if (message.length < 5 || message.length > 1000) {
+    res.status(400).json({ ok: false, error: "Suggestion must be between 5 and 1000 characters." });
+    return;
+  }
+  const uid = getVerifiedUserId(req.authUser);
+  const profile = await getUserProfile(uid);
+  const { db } = getFirebaseAdmin();
+  const suggestionRef = db.ref("suggestions").push();
+  const suggestion = { id: suggestionRef.key, uid, message, submittedBy: profile?.fullName || getVerifiedEmail(req.authUser) || "User", email: getVerifiedEmail(req.authUser), createdAt: nowIso() };
+  await suggestionRef.set(suggestion);
+  try {
+    await sendNotificationEmail({ recipients: await getNotificationRecipients("suggestions"), subject: "New Seva Portal Suggestion", heading: "New Suggestion", lines: [`From: ${suggestion.submittedBy}`, `Email: ${suggestion.email}`, `Suggestion: ${message}`] });
+  } catch (error) {
+    console.error("Suggestion notification failed:", error);
+  }
+  res.status(201).json({ ok: true, suggestion });
+});
+
 app.get("/api/booked-items", requireFirebaseAuth, async (req, res) => {
   const sessionId = String(req.query.session_id || "").trim();
   const availability = await buildAvailability(sessionId);
@@ -939,6 +976,18 @@ app.put("/api/volunteer/availability", requireFirebaseAuth, async (req, res) => 
   };
   const { db } = getFirebaseAdmin();
   await db.ref(`volunteerAvailability/${uid}`).set(availability);
+  const dateLines = Object.entries(dates).map(([date, slots]) => `${date}: ${slots.map((slot) => `${slot.from}-${slot.to}`).join(", ")}`);
+  try {
+    const volunteerEmail = getVerifiedEmail(req.authUser) || profile?.email || "";
+    await sendNotificationEmail({ recipients: [volunteerEmail], subject: "Volunteer Seva Confirmation", heading: "Your Volunteer Seva Is Confirmed", lines: [`Volunteer: ${availability.fullName}`, `Phone: ${availability.phone}`, ...dateLines, "Thank you for offering your time in seva."] });
+  } catch (error) {
+    console.error("Volunteer confirmation email failed:", error);
+  }
+  try {
+    await sendNotificationEmail({ recipients: await getNotificationRecipients("volunteer"), subject: "New Volunteer Seva Submission", heading: "Volunteer Seva Confirmation", lines: [`Volunteer: ${availability.fullName}`, `Phone: ${availability.phone}`, ...dateLines] });
+  } catch (error) {
+    console.error("Volunteer notification failed:", error);
+  }
   res.json({ ok: true, availability });
 });
 
@@ -974,10 +1023,12 @@ app.get("/api/admin/me", requireFirebaseAuth, requireAdmin, async (req, res) => 
 
 app.get("/api/admin/settings", requireFirebaseAuth, requireSuperAdmin, async (_req, res) => {
   const { db } = getFirebaseAdmin();
-  const snapshot = await db.ref("settings/receiptFooterMessage").get();
+  const snapshot = await db.ref("settings").get();
+  const settings = snapshot.val() || {};
   res.json({
     ok: true,
-    receipt_footer_message: String(snapshot.val() || DEFAULT_RECEIPT_FOOTER),
+    receipt_footer_message: String(settings.receiptFooterMessage || DEFAULT_RECEIPT_FOOTER),
+    notifications: Object.fromEntries(["annakut", "volunteer", "suggestions"].map((type) => [type, Object.keys(settings.notifications?.[type] || {})])),
   });
 });
 
@@ -988,13 +1039,33 @@ app.patch("/api/admin/settings", requireFirebaseAuth, requireSuperAdmin, async (
     return;
   }
 
+  const users = await getAllUsers();
+  const notificationPermissions = new Set(["super_admin", "admin", "annakut_admin", "volunteer_admin", "both_admin", "orders_status"]);
+  const validUids = new Set(users.filter((user) => user.uid && user.email && notificationPermissions.has(normalizePermission(user.permission))).map((user) => user.uid));
+  const notifications = {};
+  for (const type of ["annakut", "volunteer", "suggestions"]) {
+    const selected = Array.isArray(req.body?.notifications?.[type]) ? [...new Set(req.body.notifications[type].map(String))] : [];
+    if (selected.some((uid) => !validUids.has(uid))) {
+      res.status(400).json({ ok: false, error: "Notification recipients must be registered users with an email address." });
+      return;
+    }
+    notifications[type] = Object.fromEntries(selected.map((uid) => [uid, true]));
+  }
   const { db } = getFirebaseAdmin();
   await db.ref("settings").update({
     receiptFooterMessage,
+    notifications,
     updatedAt: nowIso(),
     updatedBy: getVerifiedEmail(req.authUser),
   });
-  res.json({ ok: true, receipt_footer_message: receiptFooterMessage });
+  res.json({ ok: true, receipt_footer_message: receiptFooterMessage, notifications: Object.fromEntries(Object.entries(notifications).map(([type, values]) => [type, Object.keys(values)])) });
+});
+
+app.get("/api/admin/suggestions", requireFirebaseAuth, requireAnyAdmin, async (_req, res) => {
+  const { db } = getFirebaseAdmin();
+  const snapshot = await db.ref("suggestions").get();
+  const suggestions = Object.entries(snapshot.val() || {}).map(([id, suggestion]) => ({ id, ...suggestion })).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  res.json({ ok: true, suggestions });
 });
 
 app.get("/api/admin/accounts", requireFirebaseAuth, requireFullAdmin, async (_req, res) => {
@@ -1583,6 +1654,12 @@ app.post("/api/save-offering", requireFirebaseAuth, async (req, res) => {
     emailSent = false;
     emailError = error instanceof Error ? error.message : "Unable to send confirmation email.";
     console.error("Confirmation email failed:", error);
+  }
+
+  try {
+    await sendNotificationEmail({ recipients: await getNotificationRecipients("annakut"), subject: `New Annakut Offering - ${offering.receiptNo}`, heading: "New Annakut Offering", lines: [`Devotee: ${offering.devotee.full_name}`, `Phone: ${offering.devotee.phone}`, `Items: ${offering.items.map((item) => item.name).join(", ")}`] });
+  } catch (error) {
+    console.error("Annakut admin notification failed:", error);
   }
 
   res.json({ ok: true, offering_id: offeringId, receipt_no: receiptNo, email_sent: emailSent, email_error: emailError });

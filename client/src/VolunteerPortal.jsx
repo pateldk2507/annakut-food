@@ -3,6 +3,7 @@ import { Navigate, useNavigate } from "react-router-dom";
 import sevaLightBackground from "./assets/seva-light-bg.png";
 import {
   fetchVolunteerAdminAvailability,
+  fetchAdminSuggestions,
   fetchVolunteerAvailability,
   fetchProfile,
   saveVolunteerAvailability,
@@ -159,5 +160,13 @@ export function VolunteerAdminContent() {
 
 export function VolunteerAdmin({ permission }) {
   if (!canVolunteerAdmin(permission)) return <Navigate replace to="/" />;
-  return <VolunteerShell backTo="/" title="Volunteer Confirmations" wide><VolunteerAdminContent /></VolunteerShell>;
+  return <VolunteerOnlyAdmin />;
+}
+
+function VolunteerOnlyAdmin() {
+  const [tab, setTab] = useState("volunteer");
+  const [suggestions, setSuggestions] = useState([]);
+  const [error, setError] = useState("");
+  useEffect(() => { fetchAdminSuggestions().then((data) => setSuggestions(data.suggestions || [])).catch((err) => setError(err.message)); }, []);
+  return <VolunteerShell backTo="/" title={tab === "volunteer" ? "Volunteer Confirmations" : "Suggestions"} wide><div className="admin-tabs"><button className={`filter-chip ${tab === "volunteer" ? "active" : ""}`} onClick={() => setTab("volunteer")} type="button">Volunteer Confirmations</button><button className={`filter-chip ${tab === "suggestions" ? "active" : ""}`} onClick={() => setTab("suggestions")} type="button">Suggestions</button></div>{error ? <div className="admin-feedback error">{error}</div> : null}{tab === "volunteer" ? <VolunteerAdminContent /> : <div className="admin-suggestion-list">{suggestions.length ? suggestions.map((suggestion) => <article className="list-panel admin-suggestion-card" key={suggestion.id}><header><strong>{suggestion.submittedBy || "User"}</strong><span>{suggestion.email || ""}</span></header><p>{suggestion.message}</p><footer>{suggestion.createdAt ? new Date(suggestion.createdAt).toLocaleString("en-CA") : ""}</footer></article>) : <div className="empty-state">No suggestions have been submitted.</div>}</div>}</VolunteerShell>;
 }

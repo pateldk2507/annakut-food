@@ -11,6 +11,7 @@ import "datatables.net-dt/css/dataTables.dataTables.css";
 import "datatables.net-buttons-dt/css/buttons.dataTables.css";
 import "datatables.net-responsive-dt/css/responsive.dataTables.css";
 import resetPasswordIcon from "./assets/reset-password.png";
+import sevaLightBackground from "./assets/seva-light-bg.png";
 import { VolunteerAdmin, VolunteerAdminContent, VolunteerHome } from "./VolunteerPortal";
 import {
   getCart,
@@ -42,6 +43,7 @@ import {
   fetchAdminMe,
   fetchAdminOfferings,
   fetchAdminSettings,
+  fetchAdminSuggestions,
   fetchProfile,
   fetchMenu,
   findOfferings,
@@ -52,6 +54,7 @@ import {
   saveProfile,
   syncCartHolds,
   submitItemRequest,
+  submitSuggestion,
   updateAdminMenuItem,
   updateAdminOffering,
   updateAdminOfferingStatus,
@@ -194,7 +197,7 @@ function AppShell({ background, title, subtitle, children, fullBleed = false, wi
   return (
     <div className="app-shell">
       <div className={`device-frame ${wide ? "device-frame-wide" : ""}`}>
-        <div className={`screen ${fullBleed ? "screen-home" : "screen-paper"} ${screenClassName}`}>
+        <div className={`screen ${fullBleed ? "screen-home" : "screen-paper"} ${screenClassName} ${screenClassName === "screen-login" ? "screen-login-shell" : ""}`}>
           {fullBleed ? (
             <>
               <img alt="" className="screen-bg" src={background} />
@@ -237,21 +240,21 @@ function AppShell({ background, title, subtitle, children, fullBleed = false, wi
   );
 }
 
-function ActionButton({ to, onClick, children, secondary = false, danger = false, type = "button", disabled = false }) {
-  const className = ["action-button", secondary ? "secondary" : "", danger ? "danger" : "", disabled ? "disabled" : ""]
+function ActionButton({ to, onClick, children, secondary = false, danger = false, type = "button", disabled = false, className = "" }) {
+  const buttonClassName = ["action-button", secondary ? "secondary" : "", danger ? "danger" : "", disabled ? "disabled" : "", className]
     .filter(Boolean)
     .join(" ");
 
   if (to) {
     return (
-      <a className={className} href={to} onClick={onClick}>
+      <a className={buttonClassName} href={to} onClick={onClick}>
         {children}
       </a>
     );
   }
 
   return (
-    <button className={className} disabled={disabled} onClick={onClick} type={type}>
+    <button className={buttonClassName} disabled={disabled} onClick={onClick} type={type}>
       {children}
     </button>
   );
@@ -275,13 +278,37 @@ function hasAnyAdminAccess(permission) {
 
 function PortalChooser({ permission }) {
   const navigate = useNavigate();
+  const [suggestionOpen, setSuggestionOpen] = useState(false);
+  const [suggestion, setSuggestion] = useState("");
+  const [suggestionStatus, setSuggestionStatus] = useState("");
+  const [suggestionError, setSuggestionError] = useState("");
+  const [suggestionSubmitting, setSuggestionSubmitting] = useState(false);
+
+  async function handleSuggestionSubmit(event) {
+    event.preventDefault();
+    setSuggestionSubmitting(true);
+    setSuggestionError("");
+    try {
+      await submitSuggestion({ message: suggestion });
+      setSuggestion("");
+      setSuggestionOpen(false);
+      setSuggestionStatus("Thank you. Your suggestion was submitted.");
+    } catch (error) {
+      setSuggestionError(error.message || "Unable to submit your suggestion.");
+    } finally {
+      setSuggestionSubmitting(false);
+    }
+  }
   return (
     <AppShell background={backgrounds.home} title="Seva Portal" subtitle="Choose where you would like to continue">
       <div className="tile-grid portal-tile-grid">
         <button className="selection-tile" onClick={() => navigate("/annakut")} type="button"><div className="selection-icon">Annakut</div><strong>Annakut</strong><span>Select and submit food offerings</span></button>
         <button className="selection-tile" onClick={() => navigate("/volunteer")} type="button"><div className="selection-icon">Volunteer</div><strong>Volunteer</strong><span>Submit your seva availability</span></button>
+        <button className="selection-tile" onClick={() => { setSuggestionOpen(true); setSuggestionError(""); }} type="button"><div className="selection-icon">Idea</div><strong>Suggestions</strong><span>Share a suggestion with the seva team</span></button>
         {hasAnyAdminAccess(permission) ? <button className="selection-tile" onClick={() => navigate("/admin")} type="button"><div className="selection-icon">Admin</div><strong>Admin</strong><span>Open your permitted administration pages</span></button> : null}
       </div>
+      {suggestionStatus ? <div className="admin-feedback" role="status">{suggestionStatus}</div> : null}
+      {suggestionOpen ? <div className="modal-backdrop" onClick={() => setSuggestionOpen(false)}><form className="modal-card suggestion-modal" onClick={(event) => event.stopPropagation()} onSubmit={handleSuggestionSubmit}><div className="modal-head"><div><strong>Submit a Suggestion</strong><p>Share an idea or feedback with the seva team.</p></div><button className="modal-close" onClick={() => setSuggestionOpen(false)} type="button">x</button></div><div className="modal-body"><label className="field-card"><span>Suggestion</span><textarea autoFocus className="field-input textarea" maxLength="1000" minLength="5" onChange={(event) => setSuggestion(event.target.value)} required rows="6" value={suggestion} /></label>{suggestionError ? <div className="field-error show">{suggestionError}</div> : null}</div><ActionButton disabled={suggestionSubmitting || suggestion.trim().length < 5} type="submit">{suggestionSubmitting ? "Submitting..." : "Submit Suggestion"}</ActionButton></form></div> : null}
     </AppShell>
   );
 }
@@ -431,7 +458,7 @@ function AddressAutocompleteField({
   );
 }
 
-function EmailPasswordAuthModal({ open, title, subtitle, onClose, onSuccess, initialMode = "signin" }) {
+function EmailPasswordAuthModal({ open, title, subtitle, onClose, onSuccess, initialMode = "signin", inline = false }) {
   const [mode, setMode] = useState(initialMode);
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -573,16 +600,16 @@ function EmailPasswordAuthModal({ open, title, subtitle, onClose, onSuccess, ini
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+    <div className={inline ? "auth-inline" : "modal-backdrop"} onClick={inline ? undefined : onClose}>
+      <div className={`modal-card ${inline ? "auth-inline-card" : ""}`} onClick={(event) => event.stopPropagation()}>
         <div className="modal-head">
           <div>
-            <strong>{title}</strong>
-            <p>{subtitle}</p>
+            <strong>{mode === "signup" ? "Create Account" : title}</strong>
+            <p>{mode === "signup" ? "Create your account to continue." : subtitle}</p>
           </div>
-          <button className="modal-close" onClick={onClose} type="button">
+          {!inline ? <button className="modal-close" onClick={onClose} type="button">
             x
-          </button>
+          </button> : null}
         </div>
 
         <div className="modal-body">
@@ -647,6 +674,7 @@ function EmailPasswordAuthModal({ open, title, subtitle, onClose, onSuccess, ini
             </ActionButton>
             {mode === "signin" ? <button className="auth-reset-button" disabled={submitting} onClick={handlePasswordReset} type="button">Forgot password?</button> : null}
             <ActionButton
+              className={mode === "signin" ? "auth-signup-button" : "auth-signin-button"}
               onClick={() => {
                 setMode((current) => (current === "signin" ? "signup" : "signin"));
                 setError("");
@@ -665,8 +693,6 @@ function EmailPasswordAuthModal({ open, title, subtitle, onClose, onSuccess, ini
 
 function HomePage({ firebaseUser, menu, cart, cartCount, setCartState, setDetailsState, availability }) {
   const navigate = useNavigate();
-  const [authOpen, setAuthOpen] = useState(false);
-  const [authMode, setAuthMode] = useState("signin");
   const [menuSearch, setMenuSearch] = useState("");
   const [searchMessage, setSearchMessage] = useState("");
   const [itemRequestOpen, setItemRequestOpen] = useState(false);
@@ -724,15 +750,14 @@ function HomePage({ firebaseUser, menu, cart, cartCount, setCartState, setDetail
   return (
     <AppShell
       backTo={firebaseUser ? "/" : ""}
-      background={backgrounds.home}
+      background={firebaseUser ? backgrounds.home : sevaLightBackground}
       cartCount={cartCount}
       fullBleed={!firebaseUser}
+      screenClassName={!firebaseUser ? "screen-login" : ""}
       showCartShortcut={Boolean(firebaseUser)}
-      title="Annakut"
-      subtitle=""
+      title={firebaseUser ? "Annakut" : "Diwali & Annakut Celebration 2026"}
+      subtitle={firebaseUser ? "" : "BAPS Shri Swaminarayan Mandir, Thunder Bay, ON"}
     >
-      {!firebaseUser ? <div className="home-brand" /> : null}
-
       {firebaseUser ? (
         <>
           <div className="menu-search-panel">
@@ -787,40 +812,22 @@ function HomePage({ firebaseUser, menu, cart, cartCount, setCartState, setDetail
         </>
       ) : (
         <div className="home-actions">
-        <ActionButton
-          onClick={() => {
-            setAuthMode("signin");
-            setAuthOpen(true);
-          }}
-        >
-          Login
-        </ActionButton>
-        <ActionButton
-          onClick={() => {
-            setAuthMode("signup");
-            setAuthOpen(true);
-          }}
-          secondary
-        >
-          Sign Up
-        </ActionButton>
-        <div className="home-footnote">Offer with devotion • No onion/garlic • Pure veg</div>
+          <EmailPasswordAuthModal
+            inline
+            initialMode="signin"
+            onClose={() => {}}
+            onSuccess={async () => {
+              resetLocalFlowState();
+              setFlowMode("new");
+              navigate("/");
+            }}
+            open
+            subtitle="Sign in with your account to continue."
+            title="Login"
+          />
+          <div className="home-footnote">Offer with devotion • No onion/garlic • Pure veg</div>
         </div>
       )}
-
-      <EmailPasswordAuthModal
-        initialMode={authMode}
-        onClose={() => setAuthOpen(false)}
-        onSuccess={async () => {
-          setAuthOpen(false);
-          resetLocalFlowState();
-          setFlowMode("new");
-          navigate("/");
-        }}
-        open={authOpen}
-        subtitle={authMode === "signup" ? "Create your account to continue." : "Sign in with your account to continue."}
-        title={authMode === "signup" ? "Create Account" : "Login"}
-      />
 
     </AppShell>
   );
@@ -1913,6 +1920,7 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
   const [accounts, setAccounts] = useState([]);
   const [offerings, setOfferings] = useState([]);
   const [itemRequests, setItemRequests] = useState([]);
+  const [suggestions, setSuggestions] = useState([]);
   const [adminPermission, setAdminPermission] = useState("");
   const [activeTab, setActiveTab] = useState("orders");
   const [loading, setLoading] = useState(true);
@@ -1921,6 +1929,9 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
   const [newItem, setNewItem] = useState({ categoryId: "", subcategoryId: "", name: "" });
   const [newCategoryName, setNewCategoryName] = useState("");
   const [receiptFooterMessage, setReceiptFooterMessage] = useState("Please keep this email as your receipt. To change or cancel a submitted offering, please call Rakeshbhai or Sagarbhai.");
+  const [notificationRecipients, setNotificationRecipients] = useState({ annakut: [], volunteer: [], suggestions: [] });
+  const [notificationPicker, setNotificationPicker] = useState(null);
+  const [notificationSearch, setNotificationSearch] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [messageVersion, setMessageVersion] = useState(0);
@@ -1951,18 +1962,21 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
       try {
         const meData = await fetchAdminMe();
         const nextPermission = meData.permission || "";
-        const [accountData, offeringData, settingsData, requestData] = await Promise.all([
+        const [accountData, offeringData, settingsData, requestData, suggestionData] = await Promise.all([
           hasFullAnnakutAccess(nextPermission) ? fetchAdminAccounts() : Promise.resolve({ accounts: [] }),
           fetchAdminOfferings(),
           nextPermission === "super_admin" ? fetchAdminSettings() : Promise.resolve(null),
           hasFullAnnakutAccess(nextPermission) ? fetchAdminItemRequests() : Promise.resolve({ requests: [] }),
+          fetchAdminSuggestions(),
         ]);
         if (cancelled) return;
         setAdminPermission(nextPermission);
         setAccounts(accountData.accounts || []);
         setOfferings(offeringData.offerings || []);
         setItemRequests(requestData.requests || []);
+        setSuggestions(suggestionData.suggestions || []);
         if (settingsData?.receipt_footer_message) setReceiptFooterMessage(settingsData.receipt_footer_message);
+        if (settingsData?.notifications) setNotificationRecipients(settingsData.notifications);
         setActiveTab(nextPermission === "super_admin" ? "users" : "orders");
       } catch (err) {
         if (!cancelled) setError(err.message || "Unable to load admin data.");
@@ -2193,9 +2207,10 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
   async function handleSaveSettings() {
     setSavingId("settings");
     try {
-      const response = await updateAdminSettings({ receipt_footer_message: receiptFooterMessage });
+      const response = await updateAdminSettings({ receipt_footer_message: receiptFooterMessage, notifications: notificationRecipients });
       setReceiptFooterMessage(response.receipt_footer_message);
-      showResult("Confirmation email footer updated.");
+      setNotificationRecipients(response.notifications || notificationRecipients);
+      showResult("Admin settings and notification recipients updated.");
     } catch (err) {
       setError(err.message || "Unable to update the footer message.");
     } finally {
@@ -2212,6 +2227,7 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
     requests: "Requested Items",
     reports: "Reports",
     volunteer: "Volunteer Confirmations",
+    suggestions: "Suggestions",
     settings: "Settings",
   }[activeTab] || "Admin";
 
@@ -2228,6 +2244,7 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
         {isFullAdmin ? <button className={`filter-chip ${activeTab === "requests" ? "active" : ""}`} onClick={handleOpenItemRequests} type="button">Requested Items</button> : null}
         {isFullAdmin ? <button className={`filter-chip ${activeTab === "reports" ? "active" : ""}`} onClick={() => setActiveTab("reports")} type="button">Reports</button> : null}
         {isVolunteerAdmin ? <button className={`filter-chip ${activeTab === "volunteer" ? "active" : ""}`} onClick={() => setActiveTab("volunteer")} type="button">Volunteer Confirmations</button> : null}
+        <button className={`filter-chip ${activeTab === "suggestions" ? "active" : ""}`} onClick={() => setActiveTab("suggestions")} type="button">Suggestions</button>
         {isSuperAdmin ? <button className={`filter-chip ${activeTab === "settings" ? "active" : ""}`} onClick={() => setActiveTab("settings")} type="button">Settings</button> : null}
       </div>
 
@@ -2257,17 +2274,24 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
             <textarea className="field-input textarea" maxLength="500" onChange={(event) => setReceiptFooterMessage(event.target.value)} rows="5" value={receiptFooterMessage} />
           </label>
           <span className="admin-character-count">{receiptFooterMessage.length}/500</span>
-          <button className="mini-button" disabled={savingId === "settings" || !receiptFooterMessage.trim()} onClick={handleSaveSettings} type="button">{savingId === "settings" ? "Saving..." : "Save Footer Message"}</button>
+          <strong>Notification Recipients</strong>
+          <p>Select one or more registered users for each email notification.</p>
+          {[{ key: "annakut", label: "Annakut submissions" }, { key: "volunteer", label: "Volunteer submissions" }, { key: "suggestions", label: "Suggestions" }].map((group) => <section className="notification-recipient-group" key={group.key}><div className="notification-group-heading"><strong>{group.label}</strong><button className="mini-button" onClick={() => { setNotificationPicker(group); setNotificationSearch(""); }} type="button">Add User</button></div><div className="notification-selected-users">{(notificationRecipients[group.key] || []).length ? (notificationRecipients[group.key] || []).map((uid) => { const account = accounts.find((entry) => entry.uid === uid); return account ? <div className="notification-user-row" key={`${group.key}-${uid}`}><span><strong>{account.full_name || account.email}</strong><small>{account.email}</small></span><button aria-label={`Remove ${account.full_name || account.email}`} className="admin-icon-button danger" onClick={() => setNotificationRecipients((current) => ({ ...current, [group.key]: (current[group.key] || []).filter((entry) => entry !== uid) }))} title="Remove recipient" type="button">×</button></div> : null; }) : <div className="empty-state compact">No recipients selected.</div>}</div></section>)}
+          <button className="mini-button" disabled={savingId === "settings" || !receiptFooterMessage.trim()} onClick={handleSaveSettings} type="button">{savingId === "settings" ? "Saving..." : "Save Settings"}</button>
         </div>
       ) : null}
+
+      {notificationPicker && isSuperAdmin ? <div className="modal-backdrop" onClick={() => setNotificationPicker(null)}><div className="modal-card notification-picker-modal" onClick={(event) => event.stopPropagation()}><div className="modal-head"><div><strong>Add Notification User</strong><p>{notificationPicker.label}</p></div><button className="modal-close" onClick={() => setNotificationPicker(null)} type="button">x</button></div><div className="modal-body"><input autoFocus className="admin-search" onChange={(event) => setNotificationSearch(event.target.value)} placeholder="Search by name or email" type="search" value={notificationSearch} /><div className="notification-picker-results">{accounts.filter((account) => account.email && ["super_admin", "admin", "annakut_admin", "volunteer_admin", "both_admin", "orders_status"].includes(account.permission) && !(notificationRecipients[notificationPicker.key] || []).includes(account.uid) && `${account.full_name} ${account.email}`.toLowerCase().includes(notificationSearch.trim().toLowerCase())).map((account) => <button key={account.uid} onClick={() => { setNotificationRecipients((current) => ({ ...current, [notificationPicker.key]: [...new Set([...(current[notificationPicker.key] || []), account.uid])] })); setNotificationPicker(null); }} type="button"><strong>{account.full_name || account.email}</strong><span>{account.email}</span><em>{String(account.permission || "").replaceAll("_", " ")}</em></button>)}</div></div></div></div> : null}
 
       {activeTab === "reports" && isFullAdmin ? <AdminReports menuItems={menuItems} offerings={offerings} /> : null}
 
       {activeTab === "volunteer" && isVolunteerAdmin ? <VolunteerAdminContent /> : null}
 
+      {activeTab === "suggestions" ? <div className="admin-suggestion-list">{suggestions.length ? suggestions.map((suggestion) => <article className="list-panel admin-suggestion-card" key={suggestion.id}><header><strong>{suggestion.submittedBy || "User"}</strong><span>{suggestion.email || ""}</span></header><p>{suggestion.message}</p><footer>{suggestion.createdAt ? new Date(suggestion.createdAt).toLocaleString("en-CA") : ""}</footer></article>) : <div className="empty-state">No suggestions have been submitted.</div>}</div> : null}
+
       {activeTab === "requests" && isFullAdmin ? <AdminItemRequests itemRequests={itemRequests} menu={menu} onApprove={handleApproveItemRequest} onDelete={handleDeleteItemRequest} savingId={savingId} /> : null}
 
-      {!['settings', 'reports', 'requests', 'volunteer'].includes(activeTab) ? <div className="list-panel admin-table-panel">
+      {!['settings', 'reports', 'requests', 'volunteer', 'suggestions'].includes(activeTab) ? <div className="list-panel admin-table-panel">
         <strong>{activeTab === "users" ? "Registered Users" : activeTab === "items" ? "Firebase Menu Items" : "Orders"}</strong>
         <div className="admin-mobile-export-actions">
           <button className="mini-button" onClick={() => document.querySelector(".admin-desktop-table .buttons-pdf")?.click()} type="button">Export PDF</button>

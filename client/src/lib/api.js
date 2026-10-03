@@ -77,6 +77,10 @@ export function submitItemRequest(payload) {
   });
 }
 
+export function submitSuggestion(payload) {
+  return request("/api/suggestions", { method: "POST", body: JSON.stringify(payload), requiresAuth: true });
+}
+
 export function saveOffering(payload) {
   return request("/api/save-offering", {
     method: "POST",
@@ -159,6 +163,10 @@ export function fetchAdminOfferings() {
 
 export function fetchAdminItemRequests() {
   return request("/api/admin/item-requests", { requiresAuth: true });
+}
+
+export function fetchAdminSuggestions() {
+  return request("/api/admin/suggestions", { requiresAuth: true });
 }
 
 export function approveAdminItemRequest(requestId, payload) {

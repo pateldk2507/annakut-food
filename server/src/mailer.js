@@ -205,3 +205,21 @@ export async function sendReminderEmail({ email, itemName }) {
     response: info.response || "",
   };
 }
+
+export async function sendNotificationEmail({ recipients, subject, heading, lines = [] }) {
+  const to = [...new Set((recipients || []).map((email) => String(email || "").trim().toLowerCase()).filter(Boolean))];
+  if (!isMailConfigured() || !to.length) {
+    return { sent: false, error: to.length ? "SMTP is not fully configured." : "No notification recipients are configured." };
+  }
+
+  const body = lines.map((line) => `<div style="padding:8px 0;border-bottom:1px solid #eadbc6;">${escapeHtml(line)}</div>`).join("");
+  const transporter = buildTransport();
+  await transporter.verify();
+  const info = await transporter.sendMail({
+    from: process.env.SMTP_FROM,
+    to,
+    subject,
+    html: `<div style="font-family:Arial,Helvetica,sans-serif;background:#f7f1e8;padding:24px;color:#3a251a;"><div style="max-width:680px;margin:0 auto;background:#fffaf1;border:1px solid #eadbc6;border-radius:18px;overflow:hidden;"><div style="padding:22px 26px;background:#6e2116;color:#fff7ef;font-size:24px;font-weight:700;">${escapeHtml(heading)}</div><div style="padding:20px 26px;line-height:1.55;">${body}</div></div></div>`,
+  });
+  return { sent: true, accepted: info.accepted || [], rejected: info.rejected || [] };
+}
