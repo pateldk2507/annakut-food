@@ -149,6 +149,10 @@ export function fetchAdminSettings() {
   return request("/api/admin/settings", { requiresAuth: true });
 }
 
+export function fetchPublicSettings() {
+  return request("/api/settings", { requiresAuth: true });
+}
+
 export function updateAdminSettings(payload) {
   return request("/api/admin/settings", {
     method: "PATCH",

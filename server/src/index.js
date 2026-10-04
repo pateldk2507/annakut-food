@@ -322,6 +322,12 @@ async function getNotificationRecipients(type) {
   return users.filter((user) => selectedUids.has(user.uid) && user.email).map((user) => user.email);
 }
 
+async function getReceiptFooterMessage() {
+  const { db } = getFirebaseAdmin();
+  const snapshot = await db.ref("settings/receiptFooterMessage").get();
+  return String(snapshot.val() || DEFAULT_RECEIPT_FOOTER);
+}
+
 async function getAllHolds() {
   const { db } = getFirebaseAdmin();
   const snapshot = await db.ref("itemHolds").get();
@@ -929,7 +935,7 @@ app.post("/api/find-offerings", requireFirebaseAuth, async (req, res) => {
 app.post("/api/offering/:offeringId/cancel", requireFirebaseAuth, async (req, res) => {
   res.status(403).json({
     ok: false,
-    error: "Submitted offerings cannot be changed online. Please call Rakeshbhai or Sagarbhai.",
+    error: await getReceiptFooterMessage(),
   });
 });
 
@@ -1018,6 +1024,13 @@ app.get("/api/admin/me", requireFirebaseAuth, requireAdmin, async (req, res) => 
   res.json({
     ok: true,
     permission: req.adminPermission,
+  });
+});
+
+app.get("/api/settings", requireFirebaseAuth, async (_req, res) => {
+  res.json({
+    ok: true,
+    receipt_footer_message: await getReceiptFooterMessage(),
   });
 });
 
@@ -1510,10 +1523,12 @@ app.post("/api/save-offering", requireFirebaseAuth, async (req, res) => {
     return;
   }
 
+  const offeringMessage = await getReceiptFooterMessage();
+
   if (parsed.mode === "modify") {
     res.status(403).json({
       ok: false,
-      error: "Submitted offerings cannot be changed online. Please call Rakeshbhai or Sagarbhai.",
+      error: offeringMessage,
     });
     return;
   }
@@ -1538,7 +1553,7 @@ app.post("/api/save-offering", requireFirebaseAuth, async (req, res) => {
   if (existingUserOffering) {
     res.status(409).json({
       ok: false,
-      error: "You have already submitted an offering. Please call Rakeshbhai or Sagarbhai if it needs to be changed.",
+      error: offeringMessage,
       offering_id: existingUserOffering.id,
       receipt_no: existingUserOffering.receiptNo || "",
     });
@@ -1616,7 +1631,7 @@ app.post("/api/save-offering", requireFirebaseAuth, async (req, res) => {
   if (!createResult.committed || createResult.snapshot.val()?.receiptNo !== receiptNo) {
     res.status(409).json({
       ok: false,
-      error: "You have already submitted an offering. Please call Rakeshbhai or Sagarbhai if it needs to be changed.",
+      error: offeringMessage,
     });
     return;
   }
@@ -1646,8 +1661,7 @@ app.post("/api/save-offering", requireFirebaseAuth, async (req, res) => {
   let emailError = "";
   try {
     const { db } = getFirebaseAdmin();
-    const footerSnapshot = await db.ref("settings/receiptFooterMessage").get();
-    const mailResult = await sendConfirmationEmail(offering, String(footerSnapshot.val() || DEFAULT_RECEIPT_FOOTER));
+    const mailResult = await sendConfirmationEmail(offering, offeringMessage);
     emailSent = Boolean(mailResult?.sent);
     emailError = mailResult?.sent ? "" : String(mailResult?.error || "Email was not accepted by the mail server.");
   } catch (error) {

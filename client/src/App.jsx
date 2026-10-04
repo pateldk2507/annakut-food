@@ -45,6 +45,7 @@ import {
   fetchAdminSettings,
   fetchAdminSuggestions,
   fetchProfile,
+  fetchPublicSettings,
   fetchMenu,
   findOfferings,
   releaseCartHolds,
@@ -74,6 +75,8 @@ const backgrounds = {
   review: "/assets/bg_temple_1.jpg",
   confirmed: "/assets/bg_temple_2.jpg",
 };
+
+const DEFAULT_OFFERING_MESSAGE = "Please keep this email as your receipt. To change or cancel a submitted offering, please call Rakeshbhai or Sagarbhai.";
 
 DataTable.use(DataTablesCore);
 DataTablesCore.Buttons.jszip(JSZip);
@@ -1268,7 +1271,7 @@ function CartPage({ firebaseUser, cart, setCartState, availability }) {
   );
 }
 
-function ProfilePage({ firebaseUser, cartCount, setCartState, setDetailsState }) {
+function ProfilePage({ firebaseUser, cartCount, offeringMessage, setCartState, setDetailsState }) {
   const navigate = useNavigate();
   const [form, setForm] = useState({
     fullName: "",
@@ -1489,7 +1492,7 @@ function ProfilePage({ firebaseUser, cartCount, setCartState, setDetailsState })
 
       <div className="list-panel">
         <strong>Submitted Offerings</strong>
-        <p className="offering-change-note">To change or cancel a submitted offering, please call Rakeshbhai or Sagarbhai.</p>
+        <p className="offering-change-note">{offeringMessage}</p>
         <div className="list-stack compact">
           {offerings.length ? (
             offerings.map((offering) => (
@@ -2863,7 +2866,7 @@ function ReviewPage({ firebaseUser, cart, detailsState, setCartState, setDetails
   );
 }
 
-function ConfirmedPage({ cart, detailsState, setCartState, setDetailsState }) {
+function ConfirmedPage({ cart, detailsState, offeringMessage, setCartState, setDetailsState }) {
   const navigate = useNavigate();
   const items = detailsState.submittedItems || Object.values(cart);
   const submittedAt = detailsState.submittedAt || new Date().toISOString();
@@ -2942,7 +2945,7 @@ function ConfirmedPage({ cart, detailsState, setCartState, setDetailsState }) {
           </div>
         </div>
 
-        <div className="receipt-footer">Thank you for your offering.</div>
+        <div className="receipt-footer">{offeringMessage}</div>
       </div>
 
       <div className="confirm-card email-status-card">
@@ -2968,7 +2971,8 @@ function ConfirmedPage({ cart, detailsState, setCartState, setDetailsState }) {
   );
 }
 
-function SubmittedOfferingPage({ offering, setCartState, setDetailsState }) {
+function SubmittedOfferingPage({ offering, offeringMessage, setCartState, setDetailsState }) {
+  const navigate = useNavigate();
   const [loggingOut, setLoggingOut] = useState(false);
 
   async function handleLogout() {
@@ -3002,10 +3006,13 @@ function SubmittedOfferingPage({ offering, setCartState, setDetailsState }) {
           </div>
           <div className="summary-row receipt-total"><span>Total items</span><strong>{offering.items_count || (offering.items || []).length}</strong></div>
         </div>
-        <div className="receipt-footer">To change or cancel your submitted offering, please call Rakeshbhai or Sagarbhai.</div>
+        <div className="receipt-footer">{offeringMessage}</div>
       </div>
-      <div className="confirm-card"><strong>Your offering is already submitted.</strong><p>Only one offering is allowed per person. Please contact Rakeshbhai or Sagarbhai if any changes are required.</p></div>
-      <ActionButton danger disabled={loggingOut} onClick={handleLogout}>{loggingOut ? "Logging Out..." : "Log Out"}</ActionButton>
+      <div className="confirm-card"><strong>Your offering is already submitted.</strong><p>{offeringMessage}</p></div>
+      <div className="footer-actions">
+        <ActionButton onClick={() => navigate("/")} secondary>Back</ActionButton>
+        <ActionButton danger disabled={loggingOut} onClick={handleLogout}>{loggingOut ? "Logging Out..." : "Log Out"}</ActionButton>
+      </div>
     </AppShell>
   );
 }
@@ -3016,14 +3023,14 @@ function HoldCountdown({ seconds }) {
   return <div className="hold-countdown" role="timer"><span>Items held for</span><strong>{minutes}:{String(remainingSeconds).padStart(2, "0")}</strong></div>;
 }
 
-function LoginRulesModal({ onClose }) {
+function LoginRulesModal({ offeringMessage, onClose }) {
   return (
     <div className="modal-backdrop login-rules-backdrop">
       <div aria-labelledby="login-rules-title" aria-modal="true" className="modal-card login-rules-modal" role="dialog">
         <div className="modal-head"><div><strong id="login-rules-title">Before You Begin</strong><p>Please review these offering rules.</p></div></div>
         <div className="modal-body login-rules-list">
           <div><b>1</b><p>When you add an item to your cart, it is held for 15 minutes. If the transaction is not completed, the item will be released.</p></div>
-          <div><b>2</b><p>You can submit only one offering from your profile. To adjust a submitted offering, please contact Rakeshbhai or Sagarbhai.</p></div>
+          <div><b>2</b><p>{offeringMessage}</p></div>
         </div>
         <ActionButton onClick={onClose}>I Understand</ActionButton>
       </div>
@@ -3045,6 +3052,7 @@ export default function App() {
   const [showLoginRules, setShowLoginRules] = useState(false);
   const [holdSeconds, setHoldSeconds] = useState(0);
   const [holdExpiredMessage, setHoldExpiredMessage] = useState("");
+  const [offeringMessage, setOfferingMessage] = useState(DEFAULT_OFFERING_MESSAGE);
 
   useEffect(() => {
     setCart(cart);
@@ -3120,6 +3128,25 @@ export default function App() {
       unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!firebaseUser) {
+      return;
+    }
+
+    let active = true;
+    fetchPublicSettings()
+      .then((data) => {
+        if (active && data.receipt_footer_message) setOfferingMessage(data.receipt_footer_message);
+      })
+      .catch(() => {
+        if (active) setOfferingMessage(DEFAULT_OFFERING_MESSAGE);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [firebaseUser]);
 
   useEffect(() => {
     if (!firebaseUser) {
@@ -3298,7 +3325,7 @@ export default function App() {
     <>
       {holdSeconds > 0 ? <HoldCountdown seconds={holdSeconds} /> : null}
       {holdExpiredMessage ? <div className="hold-expired-toast" role="alert">{holdExpiredMessage}</div> : null}
-      {showLoginRules && firebaseUser && !hasStaffAccess && location.pathname !== "/" && !location.pathname.startsWith("/volunteer") ? <LoginRulesModal onClose={() => { window.sessionStorage.setItem(`annakut_rules_ack_${firebaseUser.uid}`, "true"); setShowLoginRules(false); }} /> : null}
+      {showLoginRules && firebaseUser && !hasStaffAccess && location.pathname !== "/" && !location.pathname.startsWith("/volunteer") ? <LoginRulesModal offeringMessage={offeringMessage} onClose={() => { window.sessionStorage.setItem(`annakut_rules_ack_${firebaseUser.uid}`, "true"); setShowLoginRules(false); }} /> : null}
       <Routes>
       <Route
         element={
@@ -3315,7 +3342,7 @@ export default function App() {
         path="/"
       />
       <Route
-        element={firebaseUser && accessState.offering && !hasStaffAccess ? <SubmittedOfferingPage offering={accessState.offering} setCartState={setCartState} setDetailsState={setDetailsState} /> : <HomePage availability={availability} cart={cart} cartCount={totalQty(cart)} firebaseUser={firebaseUser} menu={menu} setCartState={setCartState} setDetailsState={setDetailsState} />}
+        element={firebaseUser && accessState.offering && !hasStaffAccess ? <SubmittedOfferingPage offering={accessState.offering} offeringMessage={offeringMessage} setCartState={setCartState} setDetailsState={setDetailsState} /> : <HomePage availability={availability} cart={cart} cartCount={totalQty(cart)} firebaseUser={firebaseUser} menu={menu} setCartState={setCartState} setDetailsState={setDetailsState} />}
         path="/annakut"
       />
       <Route element={firebaseUser ? <VolunteerHome permission={accessState.permission} /> : <Navigate replace to="/" />} path="/volunteer" />
@@ -3342,6 +3369,7 @@ export default function App() {
           <ProfilePage
             cartCount={totalQty(cart)}
             firebaseUser={firebaseUser}
+            offeringMessage={offeringMessage}
             setCartState={setCartState}
             setDetailsState={setDetailsState}
           />
@@ -3365,7 +3393,7 @@ export default function App() {
         path="/review"
       />
       <Route
-        element={<ConfirmedPage cart={cart} detailsState={detailsState} setCartState={setCartState} setDetailsState={setDetailsState} />}
+        element={<ConfirmedPage cart={cart} detailsState={detailsState} offeringMessage={offeringMessage} setCartState={setCartState} setDetailsState={setDetailsState} />}
         path="/confirmed"
       />
       <Route element={<Navigate replace to="/" />} path="*" />
