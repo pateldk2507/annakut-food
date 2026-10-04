@@ -625,7 +625,7 @@ function validateProfilePayload(payload, verifiedEmail) {
   const phone = normalizePhone(payload.phone);
   const address = String(payload.address || "").trim();
   const addressLine1 = String(payload.address_line1 || "").trim();
-  const unitNumber = String(payload.unit_number || "").trim();
+  const unitNumber = String(payload.unit_number || "N/A").trim() || "N/A";
 
   if (!(verifiedEmail && firstName && lastName && fullName && phone && address && addressLine1)) {
     return { error: "Missing required profile fields." };
@@ -1633,7 +1633,7 @@ app.post("/api/save-offering", requireFirebaseAuth, async (req, res) => {
       phone: parsed.phone,
       address: parsed.address,
       addressLine1: String(req.body?.address_line1 || "").trim() || parsed.address,
-      unitNumber: String(req.body?.unit_number || "").trim() || "",
+      unitNumber: String(req.body?.unit_number || "N/A").trim() || "N/A",
       notes: parsed.notes,
       permission: normalizePermission(existingProfile.permission),
       updatedAt: nowIso(),

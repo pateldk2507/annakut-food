@@ -125,12 +125,18 @@ function isThunderBayResult(result) {
   return city === "thunder bay" || formatted.includes("thunder bay");
 }
 
+function hasUnitNumber(value = "") {
+  const normalized = String(value || "").trim().toLowerCase().replaceAll(".", "");
+  return Boolean(normalized && !["n/a", "na", "none", "no unit", "not applicable"].includes(normalized));
+}
+
 function parseThunderBayAddress(value = "") {
   const raw = String(value || "").trim();
   const withUnitMatch = raw.match(/^Unit\s+([^,]+),\s*(.+?),\s*Thunder Bay,\s*ON/i);
   if (withUnitMatch) {
+    const unitNumber = withUnitMatch[1].trim();
     return {
-      unitNumber: withUnitMatch[1].trim(),
+      unitNumber: hasUnitNumber(unitNumber) ? unitNumber : "N/A",
       addressLine1: withUnitMatch[2].trim(),
     };
   }
@@ -175,7 +181,7 @@ function formatThunderBayAddress(addressLine1 = "", unitNumber = "") {
   if (!street) {
     return "Thunder Bay, ON";
   }
-  const unitLabel = unit ? `Unit ${unit}, ` : "";
+  const unitLabel = hasUnitNumber(unit) ? `Unit ${unit}, ` : "";
   return `${unitLabel}${street}, Thunder Bay, ON`;
 }
 
@@ -352,6 +358,15 @@ function AddressAutocompleteField({
 
   useEffect(() => {
     const query = String(value || "").trim();
+    const selectedLine = selectedAddress ? getGeoapifyStreetLine(selectedAddress) : "";
+    if (selectedLine && query === selectedLine) {
+      requestIdRef.current += 1;
+      setResults([]);
+      setShowResults(false);
+      setLoading(false);
+      setLookupError("");
+      return undefined;
+    }
     if (!GEOAPIFY_API_KEY || query.length < 3) {
       setResults([]);
       setLoading(false);
@@ -402,7 +417,7 @@ function AddressAutocompleteField({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [value]);
+  }, [value, selectedAddress]);
 
   return (
     <div className="autocomplete-field" ref={containerRef}>
@@ -441,8 +456,8 @@ function AddressAutocompleteField({
                 className="autocomplete-option"
                 key={key}
                 onClick={() => {
-                  onChange(addressLine1);
-                  onSelect(result);
+                  onSelect(result, addressLine1);
+                  setResults([]);
                   setShowResults(false);
                 }}
                 type="button"
@@ -465,11 +480,14 @@ function EmailPasswordAuthModal({ open, title, subtitle, onClose, onSuccess, ini
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [addressLine1, setAddressLine1] = useState("");
+  const [unitNumber, setUnitNumber] = useState("N/A");
   const [selectedAddress, setSelectedAddress] = useState(null);
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [passwordResetOpen, setPasswordResetOpen] = useState(false);
+  const [passwordResetEmail, setPasswordResetEmail] = useState("");
 
   useEffect(() => {
     if (open) {
@@ -479,10 +497,13 @@ function EmailPasswordAuthModal({ open, title, subtitle, onClose, onSuccess, ini
       setFirstName("");
       setLastName("");
       setAddressLine1("");
+      setUnitNumber("N/A");
       setSelectedAddress(null);
       setPassword("");
       setError("");
       setNotice("");
+      setPasswordResetOpen(false);
+      setPasswordResetEmail("");
       setSubmitting(false);
     }
   }, [open, initialMode]);
@@ -537,9 +558,9 @@ function EmailPasswordAuthModal({ open, title, subtitle, onClose, onSuccess, ini
           last_name: normalizedLastName,
           full_name: `${normalizedFirstName} ${normalizedLastName}`.trim(),
           phone: normalizedPhone,
-          address: formatThunderBayAddress(normalizedAddressLine1),
+          address: formatThunderBayAddress(normalizedAddressLine1, unitNumber || "N/A"),
           address_line1: normalizedAddressLine1,
-          unit_number: "",
+          unit_number: unitNumber.trim() || "N/A",
           email: user.email || normalizedEmail,
         });
         savedProfile = profileResponse.profile || null;
@@ -555,16 +576,20 @@ function EmailPasswordAuthModal({ open, title, subtitle, onClose, onSuccess, ini
         fullName:
           savedProfile?.full_name || (mode === "signup" ? `${normalizedFirstName} ${normalizedLastName}`.trim() : getSessionAuth().fullName || ""),
         addressLine1: savedProfile?.address_line1 || (mode === "signup" ? normalizedAddressLine1 : getSessionAuth().addressLine1 || ""),
-        unitNumber: savedProfile?.unit_number || getSessionAuth().unitNumber || "",
-        address:
-          savedProfile?.address ||
-          (mode === "signup" ? formatThunderBayAddress(normalizedAddressLine1) : getSessionAuth().address || ""),
+        unitNumber: savedProfile?.unit_number || (mode === "signup" ? unitNumber.trim() || "N/A" : getSessionAuth().unitNumber || "N/A"),
+        address: savedProfile
+          ? formatThunderBayAddress(savedProfile.address_line1 || normalizedAddressLine1, savedProfile.unit_number || "N/A")
+          : mode === "signup"
+            ? formatThunderBayAddress(normalizedAddressLine1, unitNumber || "N/A")
+            : getSessionAuth().address || "",
         startedAt: getSessionAuth().startedAt || new Date().toISOString(),
       });
       onSuccess();
     } catch (err) {
       const invalidLoginCodes = ["auth/invalid-credential", "auth/wrong-password", "auth/user-not-found"];
-      if (mode === "signin" && invalidLoginCodes.includes(err.code)) {
+      if (mode === "signup" && err.code === "auth/email-already-in-use") {
+        setError("Account already exists. Try login.");
+      } else if (mode === "signin" && invalidLoginCodes.includes(err.code)) {
         setError("Invalid email or password.");
       } else {
         setError(err.message || "Authentication failed.");
@@ -575,9 +600,9 @@ function EmailPasswordAuthModal({ open, title, subtitle, onClose, onSuccess, ini
   }
 
   async function handlePasswordReset() {
-    const normalizedEmail = String(email || "").trim().toLowerCase();
+    const normalizedEmail = String(passwordResetEmail || "").trim().toLowerCase();
     if (!isValidEmail(normalizedEmail)) {
-      setError("Enter your email address first.");
+      setError("Enter a valid email address.");
       setNotice("");
       return;
     }
@@ -642,14 +667,18 @@ function EmailPasswordAuthModal({ open, title, subtitle, onClose, onSuccess, ini
                   setAddressLine1(nextValue);
                   setSelectedAddress(null);
                 }}
-                onSelect={(result) => {
+                onSelect={(result, selectedLine) => {
                   setSelectedAddress(result);
-                  setAddressLine1(getGeoapifyStreetLine(result));
+                  setAddressLine1(selectedLine);
                 }}
                 placeholder="Start typing your Thunder Bay address"
                 selectedAddress={selectedAddress}
                 value={addressLine1}
               />
+              <label className="field-card compact">
+                <span>Unit Number</span>
+                <input className="field-input" onChange={(event) => setUnitNumber(event.target.value)} placeholder="N/A" value={unitNumber} />
+              </label>
               <label className="field-card compact">
                 <span>City</span>
                 <input className="field-input disabled-input" readOnly value="Thunder Bay, ON" />
@@ -672,7 +701,7 @@ function EmailPasswordAuthModal({ open, title, subtitle, onClose, onSuccess, ini
             <ActionButton disabled={submitting} onClick={handleSubmit}>
               {submitting ? "Please wait..." : mode === "signin" ? "Sign In" : "Create Account"}
             </ActionButton>
-            {mode === "signin" ? <button className="auth-reset-button" disabled={submitting} onClick={handlePasswordReset} type="button">Forgot password?</button> : null}
+            {mode === "signin" ? <button className="auth-reset-button" disabled={submitting} onClick={() => { setPasswordResetEmail(email); setError(""); setNotice(""); setPasswordResetOpen(true); }} type="button">Forgot password?</button> : null}
             <ActionButton
               className={mode === "signin" ? "auth-signup-button" : "auth-signin-button"}
               onClick={() => {
@@ -687,6 +716,37 @@ function EmailPasswordAuthModal({ open, title, subtitle, onClose, onSuccess, ini
           </div>
         </div>
       </div>
+      {passwordResetOpen ? (
+        <div className="modal-backdrop password-reset-backdrop" onClick={() => { setPasswordResetOpen(false); setError(""); setNotice(""); }}>
+          <div className="modal-card password-reset-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <strong>Reset Password</strong>
+                <p>Enter your account email and we will send password reset instructions.</p>
+              </div>
+              <button className="modal-close" onClick={() => { setPasswordResetOpen(false); setError(""); setNotice(""); }} type="button">x</button>
+            </div>
+            <div className="modal-body">
+              <label className="field-card compact">
+                <span>Email Address</span>
+                <input
+                  autoFocus
+                  className="field-input"
+                  onChange={(event) => setPasswordResetEmail(event.target.value)}
+                  placeholder="name@example.com"
+                  type="email"
+                  value={passwordResetEmail}
+                />
+              </label>
+              {error ? <div className="field-error show">{error}</div> : null}
+              {notice ? <div className="auth-status password-reset-status">{notice}</div> : null}
+              <ActionButton disabled={submitting || Boolean(notice)} onClick={handlePasswordReset}>
+                {submitting ? "Sending..." : notice ? "Email Sent" : "Send Reset Instructions"}
+              </ActionButton>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1256,7 +1316,7 @@ function ProfilePage({ firebaseUser, cartCount, setCartState, setDetailsState })
           email: profile.email || firebaseUser.email || "",
           addressLine1,
           unitNumber,
-          address: profile.address || formatThunderBayAddress(addressLine1, unitNumber),
+          address: formatThunderBayAddress(addressLine1, unitNumber),
           notes: profile.notes || "",
         });
         setPermission(profile.permission || "user");
@@ -1395,9 +1455,9 @@ function ProfilePage({ firebaseUser, cartCount, setCartState, setDetailsState })
                 setField("addressLine1", nextValue);
                 setSelectedAddress(null);
               }}
-              onSelect={(result) => {
+              onSelect={(result, selectedLine) => {
                 setSelectedAddress(result);
-                setField("addressLine1", getGeoapifyStreetLine(result));
+                setField("addressLine1", selectedLine);
               }}
               placeholder="Start typing your Thunder Bay address"
               selectedAddress={selectedAddress}
@@ -2390,13 +2450,18 @@ function DetailsPage({ firebaseUser, cart, setDetailsState, detailsState }) {
     phone: detailsState.phone || sessionAuth.phone || "",
     email: detailsState.email || verifiedEmail,
     addressLine1: detailsState.addressLine1 || sessionAuth.addressLine1 || initialAddressParts.addressLine1 || "",
-    unitNumber: detailsState.unitNumber || sessionAuth.unitNumber || initialAddressParts.unitNumber || "",
+    unitNumber: detailsState.unitNumber || sessionAuth.unitNumber || initialAddressParts.unitNumber || "N/A",
     notes: detailsState.notes || sessionAuth.notes || "",
   });
   const [selectedAddress, setSelectedAddress] = useState(
     initialAddressParts.addressLine1 ? { address_line1: initialAddressParts.addressLine1, city: "Thunder Bay" } : null
   );
-  const [savedProfileAddress, setSavedProfileAddress] = useState(detailsState.address || sessionAuth.address || "");
+  const [savedProfileAddress, setSavedProfileAddress] = useState(
+    formatThunderBayAddress(
+      detailsState.addressLine1 || sessionAuth.addressLine1 || initialAddressParts.addressLine1,
+      detailsState.unitNumber || sessionAuth.unitNumber || initialAddressParts.unitNumber
+    )
+  );
   const formattedAddress = formatThunderBayAddress(form.addressLine1, form.unitNumber);
   const pickupAddressDisplay = savedProfileAddress || formattedAddress;
 
@@ -2417,7 +2482,7 @@ function DetailsPage({ firebaseUser, cart, setDetailsState, detailsState }) {
         const profile = data.profile;
         if (profile) {
           const nextAddressLine1 = profile.address_line1 || parseThunderBayAddress(profile.address || "").addressLine1 || "";
-          const nextUnitNumber = profile.unit_number || parseThunderBayAddress(profile.address || "").unitNumber || "";
+          const nextUnitNumber = profile.unit_number || parseThunderBayAddress(profile.address || "").unitNumber || "N/A";
 
           setForm((current) => ({
             ...current,
@@ -2425,11 +2490,12 @@ function DetailsPage({ firebaseUser, cart, setDetailsState, detailsState }) {
             phone: profile.phone || current.phone || "",
             email: verifiedEmail,
             addressLine1: nextAddressLine1 || current.addressLine1 || "",
-            unitNumber: nextUnitNumber || current.unitNumber || "",
+            unitNumber: nextUnitNumber || current.unitNumber || "N/A",
             notes: profile.notes || current.notes || "",
           }));
 
-          setSavedProfileAddress(profile.address || formatThunderBayAddress(nextAddressLine1, nextUnitNumber));
+          const nextSavedAddress = formatThunderBayAddress(nextAddressLine1, nextUnitNumber);
+          setSavedProfileAddress(nextSavedAddress);
 
           if (nextAddressLine1) {
             setSelectedAddress({ address_line1: nextAddressLine1, city: "Thunder Bay" });
@@ -2443,9 +2509,9 @@ function DetailsPage({ firebaseUser, cart, setDetailsState, detailsState }) {
             lastName: profile.last_name || "",
             fullName: profile.full_name || "",
             phone: profile.phone || "",
-            address: profile.address || "",
-            addressLine1: profile.address_line1 || "",
-            unitNumber: profile.unit_number || "",
+            address: nextSavedAddress,
+            addressLine1: nextAddressLine1,
+            unitNumber: nextUnitNumber,
             notes: profile.notes || "",
             startedAt: getSessionAuth().startedAt || new Date().toISOString(),
           });
@@ -2513,7 +2579,10 @@ function DetailsPage({ firebaseUser, cart, setDetailsState, detailsState }) {
     });
 
       const profile = response.profile || {};
-      const nextSavedAddress = profile.address || formattedAddress;
+      const nextSavedAddress = formatThunderBayAddress(
+        profile.address_line1 || form.addressLine1,
+        profile.unit_number || form.unitNumber
+      );
       setSessionAuth({
         ...getSessionAuth(),
         uid: firebaseUser.uid,
@@ -2545,7 +2614,10 @@ function DetailsPage({ firebaseUser, cart, setDetailsState, detailsState }) {
       setDetailsState({
         ...form,
         email: verifiedEmail,
-        address: profile.address || formattedAddress,
+        address: formatThunderBayAddress(
+          profile.address_line1 || form.addressLine1,
+          profile.unit_number || form.unitNumber
+        ),
         addressLine1: profile.address_line1 || form.addressLine1,
         unitNumber: profile.unit_number || form.unitNumber,
       });
@@ -2602,9 +2674,9 @@ function DetailsPage({ firebaseUser, cart, setDetailsState, detailsState }) {
                 setField("addressLine1", nextValue);
                 setSelectedAddress(null);
               }}
-              onSelect={(result) => {
+              onSelect={(result, selectedLine) => {
                 setSelectedAddress(result);
-                setField("addressLine1", getGeoapifyStreetLine(result));
+                setField("addressLine1", selectedLine);
               }}
               placeholder="Start typing your Thunder Bay address"
               selectedAddress={selectedAddress}
@@ -2806,7 +2878,6 @@ function ConfirmedPage({ cart, detailsState, setCartState, setDetailsState }) {
     resetCartSessionId();
     setCartState({});
     setDetailsState({});
-    await signOutFirebaseUser();
     navigate("/");
   }
 
@@ -3065,6 +3136,9 @@ export default function App() {
         }
 
         const profile = data.profile;
+        const parsedAddress = parseThunderBayAddress(profile.address || "");
+        const addressLine1 = profile.address_line1 || parsedAddress.addressLine1 || "";
+        const unitNumber = profile.unit_number || parsedAddress.unitNumber || "N/A";
         setSessionAuth({
           ...getSessionAuth(),
           uid: firebaseUser.uid,
@@ -3073,9 +3147,9 @@ export default function App() {
           lastName: profile.last_name || "",
           fullName: profile.full_name || "",
           phone: profile.phone || "",
-          address: profile.address || "",
-          addressLine1: profile.address_line1 || "",
-          unitNumber: profile.unit_number || "",
+          address: formatThunderBayAddress(addressLine1, unitNumber),
+          addressLine1,
+          unitNumber,
           startedAt: getSessionAuth().startedAt || new Date().toISOString(),
         });
       } catch {

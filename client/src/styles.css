@@ -993,6 +993,64 @@ button {
   opacity: 0.55;
 }
 
+.password-reset-backdrop {
+  z-index: 1200;
+}
+
+.password-reset-modal {
+  border: 1px solid rgba(255, 226, 174, 0.28);
+  border-radius: 20px;
+  background: #2f1c18;
+  color: #fff0cf;
+  box-shadow: 0 24px 60px rgba(56, 26, 8, 0.3);
+}
+
+.password-reset-modal .modal-head strong,
+.password-reset-modal .field-card > span {
+  color: #fff0cf;
+}
+
+.password-reset-modal .modal-head p {
+  color: #ead4ad;
+}
+
+.password-reset-modal .modal-close {
+  color: #fff0cf;
+}
+
+.password-reset-modal .field-card {
+  gap: 8px;
+  padding: 12px;
+  border-color: rgba(255, 226, 174, 0.24);
+  background: rgba(255, 240, 207, 0.08);
+}
+
+.password-reset-modal .field-card > span {
+  padding: 0 4px;
+}
+
+.password-reset-modal .field-input {
+  padding: 13px 14px;
+  border-color: rgba(255, 226, 174, 0.26);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff0cf;
+}
+
+.password-reset-modal .field-input::placeholder {
+  color: rgba(255, 240, 207, 0.58);
+}
+
+.password-reset-status {
+  padding: 12px 14px;
+  border: 1px solid #8f1f14;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #c93624, #a91f14);
+  color: #fff;
+  font-weight: 800;
+  line-height: 1.45;
+  box-shadow: 0 10px 22px rgba(143, 31, 20, 0.22);
+}
+
 .hold-countdown {
   position: fixed;
   z-index: 900;
@@ -2640,6 +2698,31 @@ button {
 .screen-login-shell .auth-inline-card .auth-reset-button:focus-visible {
   background: rgba(230, 176, 76, 0.44);
   border-color: rgba(143, 78, 12, 0.55);
+}
+
+.screen-login-shell .autocomplete-results {
+  position: relative;
+  z-index: 20;
+  border-color: rgba(128, 73, 20, 0.24);
+  background: #fffaf0;
+  color: #44250f;
+  box-shadow: 0 18px 34px rgba(91, 51, 15, 0.2);
+}
+
+.screen-login-shell .autocomplete-option {
+  border-bottom-color: rgba(128, 73, 20, 0.14);
+  background: #fffaf0;
+  color: #44250f;
+}
+
+.screen-login-shell .autocomplete-option:hover,
+.screen-login-shell .autocomplete-option:focus-visible {
+  background: #f7e7c7;
+}
+
+.screen-login-shell .autocomplete-option span {
+  color: #78542f;
+  opacity: 1;
 }
 
 /* Date-based volunteer seva workflow */
