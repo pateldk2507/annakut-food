@@ -2547,7 +2547,7 @@ function DetailsPage({ firebaseUser, cart, setDetailsState, detailsState }) {
       setError("Please complete your full name and phone number.");
       return false;
     }
-    if (!form.addressLine1.trim() || !form.unitNumber.trim()) {
+    if (!form.addressLine1.trim()) {
       setError("Your Thunder Bay address is required.");
       return false;
     }
@@ -2634,7 +2634,7 @@ function DetailsPage({ firebaseUser, cart, setDetailsState, detailsState }) {
   }
 
   return (
-    <AppShell background={backgrounds.details} cartCount={totalQty(cart)} showCartShortcut title="Details" subtitle="Confirm your devotee information before review">
+    <AppShell background={backgrounds.details} cartCount={totalQty(cart)} screenClassName="screen-details" showCartShortcut title="Details" subtitle="Confirm your devotee information before review">
       {profileLoading ? (
         <div className="confirm-card">
           <strong>Loading your saved details...</strong>
@@ -2679,15 +2679,19 @@ function DetailsPage({ firebaseUser, cart, setDetailsState, detailsState }) {
               }}
               onSelect={(result, selectedLine) => {
                 setSelectedAddress(result);
-                setField("addressLine1", selectedLine);
+                setForm((current) => ({
+                  ...current,
+                  addressLine1: selectedLine,
+                  unitNumber: "",
+                }));
               }}
               placeholder="Start typing your Thunder Bay address"
               selectedAddress={selectedAddress}
               value={form.addressLine1}
             />
             <label className="field-card">
-              <span>Unit Number *</span>
-              <input className="field-input" onChange={(event) => setField("unitNumber", event.target.value)} value={form.unitNumber} />
+              <span>Unit Number (Optional)</span>
+              <input className="field-input" onChange={(event) => setField("unitNumber", event.target.value)} placeholder="Leave blank if not applicable" value={form.unitNumber} />
             </label>
           </>
         ) : null}

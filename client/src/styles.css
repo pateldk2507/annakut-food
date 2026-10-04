@@ -2725,6 +2725,55 @@ button {
   opacity: 1;
 }
 
+.screen-details .autocomplete-field .field-card {
+  padding: 14px;
+  border: 1px solid rgba(128, 73, 20, 0.22);
+  border-radius: 16px;
+  background: #fffaf0;
+  color: #44250f;
+}
+
+.screen-details .autocomplete-field .field-card > span,
+.screen-details .autocomplete-meta {
+  color: #6f4824;
+  opacity: 1;
+}
+
+.screen-details .autocomplete-field .field-input {
+  border-color: rgba(137, 82, 25, 0.28);
+  background: #fff;
+  color: #40230f;
+}
+
+.screen-details .autocomplete-field .field-input::placeholder {
+  color: rgba(64, 35, 15, 0.52);
+}
+
+.screen-details .autocomplete-results {
+  position: relative;
+  z-index: 20;
+  border-color: rgba(128, 73, 20, 0.24);
+  background: #fffaf0;
+  color: #44250f;
+  box-shadow: 0 18px 34px rgba(91, 51, 15, 0.2);
+}
+
+.screen-details .autocomplete-option {
+  border-bottom-color: rgba(128, 73, 20, 0.14);
+  background: #fffaf0;
+  color: #44250f;
+}
+
+.screen-details .autocomplete-option:hover,
+.screen-details .autocomplete-option:focus-visible {
+  background: #f7e7c7;
+}
+
+.screen-details .autocomplete-option span {
+  color: #78542f;
+  opacity: 1;
+}
+
 /* Date-based volunteer seva workflow */
 .seva-wizard-shell {
   --seva-gold: #b87418;
