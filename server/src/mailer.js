@@ -44,15 +44,28 @@ function escapeHtml(value = "") {
     .replaceAll("'", "&#039;");
 }
 
-function buildReceiptHtml(offering, footerMessage = DEFAULT_RECEIPT_FOOTER) {
+function buildReceiptHtml(offering, footerMessage = DEFAULT_RECEIPT_FOOTER, { heading = "Annakut Offering Confirmation", newItems = [], removedItems = [] } = {}) {
   const devotee = offering.devotee || {};
   const submittedAt = offering.createdAt ? new Date(offering.createdAt).toLocaleString() : "";
   const totalItems = (offering.items || []).length;
+  const newItemIds = new Set(newItems.map((item) => item.id || item.item_id));
   const itemsHtml = (offering.items || [])
     .map(
       (item) => `
         <tr>
-          <td class="receipt-cell" style="padding:12px 4px;border-bottom:1px dotted #d9c3a7;color:#3a251a;">${escapeHtml(item.name)}</td>
+          <td class="receipt-cell" style="padding:12px 4px;border-bottom:1px dotted #d9c3a7;color:#3a251a;">
+            ${escapeHtml(item.name)}
+            ${newItemIds.has(item.id || item.item_id) ? '<span class="new-item-badge" style="display:inline-block;margin-left:8px;padding:3px 7px;border-radius:999px;background-color:#237a3b;color:#ffffff;font-size:9px;font-weight:700;line-height:1;letter-spacing:.08em;vertical-align:middle;">NEW</span>' : ""}
+          </td>
+        </tr>
+      `
+    )
+    .join("");
+  const removedItemsHtml = removedItems
+    .map(
+      (item) => `
+        <tr>
+          <td class="receipt-cell removed-item" style="padding:12px 4px;border-bottom:1px dotted #d9c3a7;color:#9f2f22;text-decoration:line-through;font-weight:700;">&#10005;&nbsp; ${escapeHtml(item.name)}</td>
         </tr>
       `
     )
@@ -71,6 +84,7 @@ function buildReceiptHtml(offering, footerMessage = DEFAULT_RECEIPT_FOOTER) {
         .email-header * { color: #fff7ef !important; }
         .email-label { color: #8b5e34 !important; }
         .email-muted { color: #7a5a49 !important; }
+        .new-item-badge { background-color: #237a3b !important; color: #ffffff !important; }
         @media (prefers-color-scheme: dark) {
           .email-page { background-color: #120b09 !important; }
           .email-receipt { background-color: #241713 !important; color: #fff7ef !important; border-color: #5f4637 !important; }
@@ -79,6 +93,8 @@ function buildReceiptHtml(offering, footerMessage = DEFAULT_RECEIPT_FOOTER) {
           .email-label { color: #efbf82 !important; }
           .email-muted { color: #d8c2ad !important; }
           .receipt-cell { color: #fff7ef !important; border-color: #654b3a !important; }
+          .removed-item { color: #ff9f91 !important; }
+          .new-item-badge { background-color: #3a9b55 !important; color: #ffffff !important; }
           .receipt-rule { border-color: #654b3a !important; }
         }
         [data-ogsc] .email-page { background-color: #120b09 !important; }
@@ -94,7 +110,7 @@ function buildReceiptHtml(offering, footerMessage = DEFAULT_RECEIPT_FOOTER) {
               <tr>
                 <td class="email-header" style="padding:26px 28px;background-color:#6e2116;color:#fff7ef;border-radius:8px 8px 0 0;">
                   <div style="font-size:11px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:#fff7ef;">Offering Receipt</div>
-                  <div style="margin-top:7px;font-size:29px;font-weight:700;line-height:1.1;color:#fff7ef;">Annakut Offering Confirmation</div>
+                  <div style="margin-top:7px;font-size:29px;font-weight:700;line-height:1.1;color:#fff7ef;">${escapeHtml(heading)}</div>
                   <div style="margin-top:8px;font-size:14px;line-height:1.5;color:#fff7ef;">Thank you for offering with devotion.</div>
                 </td>
               </tr>
@@ -120,7 +136,7 @@ function buildReceiptHtml(offering, footerMessage = DEFAULT_RECEIPT_FOOTER) {
                 <td style="padding:18px 28px 8px;">
                   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;">
                     <thead><tr><th class="email-label" style="padding:0 4px 9px;text-align:left;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#8b5e34;">Offering</th></tr></thead>
-                    <tbody>${itemsHtml}</tbody>
+                    <tbody>${itemsHtml}${removedItemsHtml}</tbody>
                     <tfoot><tr><td style="padding:14px 4px;border-top:2px solid #6e3d27;font-weight:700;">Total items: ${totalItems}</td></tr></tfoot>
                   </table>
                 </td>
@@ -171,6 +187,50 @@ export async function sendConfirmationEmail(offering, footerMessage = DEFAULT_RE
     to: offering.devotee.email,
     subject: `Annakut Confirmation - ${offering.receiptNo}`,
     html: buildReceiptHtml(offering, footerMessage),
+  });
+
+  return {
+    sent: true,
+    accepted: info.accepted || [],
+    rejected: info.rejected || [],
+    response: info.response || "",
+  };
+}
+
+export async function sendModifiedConfirmationEmail(offering, removedItems = [], footerMessage = DEFAULT_RECEIPT_FOOTER) {
+  if (!isMailConfigured() || !offering?.devotee?.email) {
+    return { sent: false, error: "SMTP is not fully configured." };
+  }
+
+  const transporter = buildTransport();
+  await transporter.verify();
+  const info = await transporter.sendMail({
+    from: process.env.SMTP_FROM,
+    to: offering.devotee.email,
+    subject: `Your Order Was Modified - ${offering.receiptNo}`,
+    html: buildReceiptHtml(offering, footerMessage, { heading: "Your Order Was Modified", removedItems }),
+  });
+
+  return {
+    sent: true,
+    accepted: info.accepted || [],
+    rejected: info.rejected || [],
+    response: info.response || "",
+  };
+}
+
+export async function sendExpandedConfirmationEmail(offering, newItems = [], footerMessage = DEFAULT_RECEIPT_FOOTER) {
+  if (!isMailConfigured() || !offering?.devotee?.email) {
+    return { sent: false, error: "SMTP is not fully configured." };
+  }
+
+  const transporter = buildTransport();
+  await transporter.verify();
+  const info = await transporter.sendMail({
+    from: process.env.SMTP_FROM,
+    to: offering.devotee.email,
+    subject: `Annakut Offering Updated - ${offering.receiptNo}`,
+    html: buildReceiptHtml(offering, footerMessage, { heading: "Annakut Offering Updated", newItems }),
   });
 
   return {

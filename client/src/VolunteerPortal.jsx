@@ -12,7 +12,7 @@ import {
 const availabilityDays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 
 function canVolunteerAdmin(permission) {
-  return ["super_admin", "volunteer_admin", "both_admin"].includes(permission);
+  return ["super_admin", "it", "volunteer_admin", "both_admin"].includes(permission);
 }
 
 function formatTime12(value) {

@@ -83,6 +83,61 @@ DataTablesCore.Buttons.jszip(JSZip);
 pdfMake.addVirtualFileSystem(pdfFonts);
 DataTablesCore.Buttons.pdfMake(pdfMake);
 
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.rel = "noopener";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
+function xmlEscape(value) {
+  return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;");
+}
+
+function excelColumnName(index) {
+  let value = index + 1;
+  let name = "";
+  while (value > 0) {
+    value -= 1;
+    name = String.fromCharCode(65 + (value % 26)) + name;
+    value = Math.floor(value / 26);
+  }
+  return name;
+}
+
+async function exportRowsToExcel({ columns, filename, rows }) {
+  const worksheetRows = [columns.map((column) => column.title), ...rows.map((row) => columns.map((column) => row[column.key] ?? "-"))];
+  const worksheetXml = worksheetRows.map((row, rowIndex) => `<row r="${rowIndex + 1}">${row.map((value, columnIndex) => `<c r="${excelColumnName(columnIndex)}${rowIndex + 1}" t="inlineStr"${rowIndex === 0 ? ' s="1"' : ""}><is><t>${xmlEscape(value)}</t></is></c>`).join("")}</row>`).join("");
+  const zip = new JSZip();
+  zip.file("[Content_Types].xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>');
+  zip.folder("_rels").file(".rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
+  zip.folder("xl").file("workbook.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Report" sheetId="1" r:id="rId1"/></sheets></workbook>');
+  zip.folder("xl").folder("_rels").file("workbook.xml.rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>');
+  zip.folder("xl").file("styles.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF6E2116"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs></styleSheet>');
+  zip.folder("xl").folder("worksheets").file("sheet1.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${worksheetXml}</sheetData></worksheet>`);
+  downloadBlob(await zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `${filename}.xlsx`);
+}
+
+async function exportRowsToPdf({ columns, filename, rows, title }) {
+  const body = [
+    columns.map((column) => ({ text: column.title, bold: true, color: "#fffaf1", fillColor: "#6e2116" })),
+    ...rows.map((row) => columns.map((column) => String(row[column.key] ?? "-"))),
+  ];
+  const definition = {
+    pageOrientation: "landscape",
+    pageSize: "LETTER",
+    pageMargins: [16, 20, 16, 20],
+    content: [{ text: title, bold: true, color: "#3d1d13", fontSize: 15, margin: [0, 0, 0, 10] }, { table: { headerRows: 1, dontBreakRows: true, widths: columns.map((column) => column.pdfWidth || "*"), body }, layout: { hLineWidth: () => 0.5, vLineWidth: () => 0.5, hLineColor: () => "#cbb59a", vLineColor: () => "#cbb59a", paddingLeft: () => 3, paddingRight: () => 3, paddingTop: () => 3, paddingBottom: () => 3 } }],
+    defaultStyle: { fontSize: columns.length >= 7 ? 6.5 : 8, lineHeight: 1.12 },
+  };
+  downloadBlob(await pdfMake.createPdf(definition).getBlob(), `${filename}.pdf`);
+}
+
 const rulesList = [
   { icon: "No", title: "No Onion / Garlic" },
   { icon: "Veg", title: "Pure Vegetarian" },
@@ -270,15 +325,15 @@ function ActionButton({ to, onClick, children, secondary = false, danger = false
 }
 
 function hasAnnakutAdminAccess(permission) {
-  return ["super_admin", "admin", "annakut_admin", "both_admin", "orders_status"].includes(permission);
+  return ["super_admin", "it", "admin", "annakut_admin", "both_admin"].includes(permission);
 }
 
 function hasFullAnnakutAccess(permission) {
-  return ["super_admin", "admin", "annakut_admin", "both_admin"].includes(permission);
+  return ["super_admin", "it", "admin", "annakut_admin", "both_admin"].includes(permission);
 }
 
 function hasVolunteerAdminAccess(permission) {
-  return ["super_admin", "volunteer_admin", "both_admin"].includes(permission);
+  return ["super_admin", "it", "volunteer_admin", "both_admin"].includes(permission);
 }
 
 function hasAnyAdminAccess(permission) {
@@ -1500,10 +1555,10 @@ function ProfilePage({ firebaseUser, cartCount, offeringMessage, setCartState, s
                   <button className="cart-row profile-offering-button" onClick={() => setSelectedOffering(offering)} type="button">
                     <div>
                       <strong>{offering.receipt_no || `Offering #${offering.id}`}</strong>
-                      <p>{offering.items_count} items - {offering.status || "submitted"}</p>
+                      <p>{offering.items_count} items - {offering.status || "received"}</p>
                       <span>{offering.created_at}</span>
                     </div>
-                    <span className="offering-status">{offering.status || "submitted"}</span>
+                    <span className="offering-status">{offering.status || "received"}</span>
                   </button>
                 </div>
             ))
@@ -1522,7 +1577,7 @@ function ProfilePage({ firebaseUser, cartCount, offeringMessage, setCartState, s
             <div className="modal-head">
               <div>
                 <strong id="offering-details-title">{selectedOffering.receipt_no || `Offering #${selectedOffering.id}`}</strong>
-                <p>{selectedOffering.created_at} - {selectedOffering.status || "submitted"}</p>
+                <p>{selectedOffering.created_at} - {selectedOffering.status || "received"}</p>
               </div>
               <button aria-label="Close order details" className="modal-close" onClick={() => setSelectedOffering(null)} type="button">x</button>
             </div>
@@ -1700,52 +1755,13 @@ function AdminReports({ menuItems, offerings }) {
     Array.isArray(row[column]) ? row[column].join(", ") : row[column] ?? "-",
   ])));
   const reportTableOptions = {
-    responsive: true,
+    responsive: false,
     pageLength: 10,
     lengthMenu: [10, 25, 50, 100],
     order: [],
     autoWidth: false,
     layout: {
-      topStart: ["pageLength", {
-        buttons: [
-          {
-            extend: "pdfHtml5",
-            text: "PDF",
-            className: "report-buttons-pdf",
-            title: `Annakut ${report.title} Report`,
-            filename: `annakut-${reportType}-report`,
-            orientation: "landscape",
-            pageSize: "A4",
-            exportOptions: { columns: columns.map((_column, index) => index) },
-            customize: (document) => {
-              document.defaultStyle.fontSize = 8;
-              document.styles.title = { color: "#3d1d13", bold: true, fontSize: 16, margin: [0, 0, 0, 10] };
-              document.styles.tableHeader = { color: "#fffaf1", fillColor: "#6e2116", bold: true, fontSize: 9 };
-              const table = document.content.find((section) => section.table);
-              if (table) {
-                table.layout = {
-                  hLineWidth: () => 0.5,
-                  vLineWidth: () => 0.5,
-                  hLineColor: () => "#cbb59a",
-                  vLineColor: () => "#cbb59a",
-                  paddingLeft: () => 4,
-                  paddingRight: () => 4,
-                  paddingTop: () => 3,
-                  paddingBottom: () => 3,
-                };
-              }
-            },
-          },
-          {
-            extend: "excelHtml5",
-            text: "Excel",
-            className: "report-buttons-excel",
-            title: `Annakut ${report.title} Report`,
-            filename: `annakut-${reportType}-report`,
-            exportOptions: { columns: columns.map((_column, index) => index) },
-          },
-        ],
-      }],
+      topStart: "pageLength",
       topEnd: "search",
       bottomStart: "info",
       bottomEnd: "paging",
@@ -1775,9 +1791,9 @@ function AdminReports({ menuItems, offerings }) {
       <div className="list-panel report-output">
         <strong>{report.title}</strong>
         {report.rows.length ? <>
-          <div className="admin-mobile-export-actions report-mobile-export-actions">
-            <button className="mini-button" onClick={() => document.querySelector(".report-desktop-table .report-buttons-pdf")?.click()} type="button">Export PDF</button>
-            <button className="mini-button" onClick={() => document.querySelector(".report-desktop-table .report-buttons-excel")?.click()} type="button">Export Excel</button>
+          <div className="admin-direct-export-actions">
+            <button className="mini-button" onClick={() => exportRowsToPdf({ columns: columns.map((column) => ({ key: column, title: columnTitle(column) })), filename: `annakut-${reportType}-report`, rows: exportRows, title: `Annakut ${report.title} Report` })} type="button">Export PDF</button>
+            <button className="mini-button" onClick={() => exportRowsToExcel({ columns: columns.map((column) => ({ key: column, title: columnTitle(column) })), filename: `annakut-${reportType}-report`, rows: exportRows })} type="button">Export Excel</button>
           </div>
           <div className="report-mobile-cards">{exportRows.map((row, index) => <article className="admin-mobile-card" key={`${reportType}-${index}`}>{columns.map((column) => <span key={column}><b>{columnTitle(column)}</b>{row[column]}</span>)}</article>)}</div>
           <div className="report-desktop-table admin-table-wrap">
@@ -1796,84 +1812,14 @@ function AdminReports({ menuItems, offerings }) {
 }
 
 function AdminDataTable({ activeTab, accounts, canManagePermissions, offerings, menuItems, permissionOptions, statusOptions, savingId, onCancelOrder, onDeleteUser, onEdit, onPermissionChange, onRemoveItem, onResetPassword, onStatusChange }) {
-  const reportName = activeTab === "users" ? "Users" : activeTab === "items" ? "Menu Items" : "Orders";
-  const exportColumns = activeTab === "users" ? [0, 1, 2, 3, 4] : activeTab === "items" ? [0, 1, 2] : [0, 1, 2, 3, 4, 5, 6];
-  const exportOptions = {
-    columns: exportColumns,
-    format: {
-      body: (_data, row, column) => {
-        if (activeTab === "users") {
-          const account = accounts[row] || {};
-          return [account.full_name, account.email, formatUsPhone(account.phone || ""), account.permission, account.address][column] || "-";
-        }
-
-        if (activeTab === "items") {
-          const item = menuItems[row] || {};
-          return [item.name, item.category, item.subcategory][column] || "-";
-        }
-
-        const offering = offerings[row] || {};
-        const devotee = offering.devotee || {};
-        const values = [
-          offering.receipt_no || offering.id,
-          [devotee.full_name, formatUsPhone(devotee.phone || ""), devotee.email].filter(Boolean).join(" | "),
-          (offering.items || []).map((item) => item.name).join(", "),
-          offering.containers_required || 0,
-          devotee.address,
-          String(offering.status || "submitted").replace("_", " "),
-          offering.created_at,
-        ];
-        return values[column] ?? "-";
-      },
-    },
-  };
   const options = {
-    responsive: true,
+    responsive: false,
     pageLength: 10,
     lengthMenu: [10, 25, 50, 100],
     order: [],
     autoWidth: false,
     layout: {
-      topStart: ["pageLength", {
-        buttons: [
-          {
-            extend: "pdfHtml5",
-            text: "PDF",
-            className: "buttons-pdf",
-            title: `Annakut ${reportName} Report`,
-            filename: `annakut-${activeTab}`,
-            orientation: "landscape",
-            pageSize: "A4",
-            exportOptions,
-            customize: (document) => {
-              document.defaultStyle.fontSize = 7;
-              document.styles.title = { color: "#3d1d13", bold: true, fontSize: 16, margin: [0, 0, 0, 10] };
-              document.styles.tableHeader = { color: "#fffaf1", fillColor: "#6e2116", bold: true, fontSize: 8 };
-              const table = document.content.find((section) => section.table);
-              if (table) {
-                table.layout = {
-                  hLineWidth: () => 0.5,
-                  vLineWidth: () => 0.5,
-                  hLineColor: () => "#cbb59a",
-                  vLineColor: () => "#cbb59a",
-                  paddingLeft: () => 4,
-                  paddingRight: () => 4,
-                  paddingTop: () => 3,
-                  paddingBottom: () => 3,
-                };
-              }
-            },
-          },
-          {
-            extend: "excelHtml5",
-            text: "Excel",
-            className: "buttons-excel",
-            title: `Annakut ${reportName} Report`,
-            filename: `annakut-${activeTab}`,
-            exportOptions,
-          },
-        ],
-      }],
+      topStart: "pageLength",
       topEnd: "search",
       bottomStart: "info",
       bottomEnd: "paging",
@@ -1961,7 +1907,7 @@ function AdminDataTable({ activeTab, accounts, canManagePermissions, offerings, 
           </div>
         ),
         5: (status, offering) => (
-          <select className="admin-select" disabled={savingId === offering.id} onChange={(event) => onStatusChange(offering.id, event.target.value)} value={status || "submitted"}>
+          <select className="admin-select" disabled={savingId === offering.id} onChange={(event) => onStatusChange(offering.id, event.target.value)} value={status || "received"}>
             {statusOptions.map((option) => <option key={option} value={option}>{option.replace("_", " ")}</option>)}
           </select>
         ),
@@ -1989,6 +1935,7 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState("");
   const [editor, setEditor] = useState(null);
+  const [orderItemSearch, setOrderItemSearch] = useState("");
   const [newItem, setNewItem] = useState({ categoryId: "", subcategoryId: "", name: "" });
   const [newCategoryName, setNewCategoryName] = useState("");
   const [receiptFooterMessage, setReceiptFooterMessage] = useState("Please keep this email as your receipt. To change or cancel a submitted offering, please call Rakeshbhai or Sagarbhai.");
@@ -1999,13 +1946,12 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
   const [message, setMessage] = useState("");
   const [messageVersion, setMessageVersion] = useState(0);
   const isFullAdmin = hasFullAnnakutAccess(adminPermission);
-  const isSuperAdmin = adminPermission === "super_admin";
+  const isSuperAdmin = ["super_admin", "it"].includes(adminPermission);
   const isVolunteerAdmin = hasVolunteerAdminAccess(adminPermission);
-  const statusOptions = ["submitted", "confirmed", "preparing", "ready", "picked_up", "cancelled"];
+  const statusOptions = ["received", "pickup", "cancelled"];
   const permissionOptions = [
     { value: "user", label: "Normal User" },
-    { value: "orders_status", label: "Orders Status" },
-    { value: "admin", label: "Annakut Admin (Legacy)" },
+    { value: "it", label: "IT" },
     { value: "annakut_admin", label: "Annakut Admin" },
     { value: "volunteer_admin", label: "Volunteer Admin" },
     { value: "both_admin", label: "Annakut + Volunteer Admin" },
@@ -2015,6 +1961,41 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
       (subcategory.items || []).map((item) => ({ ...item, categoryId: category.id, category: category.name, subcategoryId: subcategory.id, subcategory: subcategory.name }))
     )
   );
+  const adminExport = activeTab === "users"
+    ? {
+        title: "Annakut Users Report",
+        filename: "annakut-users",
+        columns: [
+          { key: "name", title: "Name", pdfWidth: 105 }, { key: "email", title: "Email", pdfWidth: 145 }, { key: "phone", title: "Phone", pdfWidth: 85 },
+          { key: "permission", title: "Permission", pdfWidth: 85 }, { key: "address", title: "Address", pdfWidth: "*" },
+        ],
+        rows: accounts.map((account) => ({ name: account.full_name || "-", email: account.email || "-", phone: formatUsPhone(account.phone || "") || "-", permission: account.permission || "user", address: account.address || "-" })),
+      }
+    : activeTab === "items"
+      ? {
+          title: "Annakut Menu Items Report",
+          filename: "annakut-menu-items",
+          columns: [{ key: "item", title: "Item", pdfWidth: "*" }, { key: "category", title: "Category", pdfWidth: 180 }, { key: "subcategory", title: "Subcategory", pdfWidth: 180 }],
+          rows: menuItems.map((item) => ({ item: item.name || "-", category: item.category || "-", subcategory: item.subcategory || "-" })),
+        }
+      : {
+          title: "Annakut Orders Report",
+          filename: "annakut-orders",
+          columns: [
+            { key: "receipt", title: "Receipt", pdfWidth: 55 }, { key: "user", title: "User", pdfWidth: 105 }, { key: "items", title: "Items", pdfWidth: 145 },
+            { key: "containers", title: "Containers", pdfWidth: 48 }, { key: "address", title: "Address", pdfWidth: 170 }, { key: "status", title: "Status", pdfWidth: 55 },
+            { key: "submitted", title: "Submitted", pdfWidth: 108 },
+          ],
+          rows: offerings.map((offering) => ({
+            receipt: offering.receipt_no || offering.id || "-",
+            user: [offering.devotee?.full_name, formatUsPhone(offering.devotee?.phone || ""), offering.devotee?.email].filter(Boolean).join(" | ") || "-",
+            items: (offering.items || []).map((item) => item.name).join(", ") || "-",
+            containers: offering.containers_required ?? (offering.items || []).length,
+            address: offering.devotee?.address || "-",
+            status: offering.status || "received",
+            submitted: offering.created_at || "-",
+          })),
+        };
 
   useEffect(() => {
     if (!firebaseUser) return;
@@ -2028,19 +2009,22 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
         const [accountData, offeringData, settingsData, requestData, suggestionData] = await Promise.all([
           hasFullAnnakutAccess(nextPermission) ? fetchAdminAccounts() : Promise.resolve({ accounts: [] }),
           fetchAdminOfferings(),
-          nextPermission === "super_admin" ? fetchAdminSettings() : Promise.resolve(null),
+          ["super_admin", "it"].includes(nextPermission) ? fetchAdminSettings() : Promise.resolve(null),
           hasFullAnnakutAccess(nextPermission) ? fetchAdminItemRequests() : Promise.resolve({ requests: [] }),
           fetchAdminSuggestions(),
         ]);
         if (cancelled) return;
         setAdminPermission(nextPermission);
-        setAccounts(accountData.accounts || []);
+        setAccounts((accountData.accounts || []).map((account) => ({
+          ...account,
+          permission: account.permission === "admin" ? "annakut_admin" : account.permission,
+        })));
         setOfferings(offeringData.offerings || []);
         setItemRequests(requestData.requests || []);
         setSuggestions(suggestionData.suggestions || []);
         if (settingsData?.receipt_footer_message) setReceiptFooterMessage(settingsData.receipt_footer_message);
         if (settingsData?.notifications) setNotificationRecipients(settingsData.notifications);
-        setActiveTab(nextPermission === "super_admin" ? "users" : "orders");
+        setActiveTab(["super_admin", "it"].includes(nextPermission) ? "users" : "orders");
       } catch (err) {
         if (!cancelled) setError(err.message || "Unable to load admin data.");
       } finally {
@@ -2065,6 +2049,11 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
     setMessage(text);
     setMessageVersion((current) => current + 1);
     setError("");
+  }
+
+  function openEditor(type, data) {
+    setOrderItemSearch("");
+    setEditor({ type, data: structuredClone(data) });
   }
 
   function confirmAdminPromotion(uid, permission) {
@@ -2132,7 +2121,7 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
     try {
       const data = await updateAdminOfferingStatus(offeringId, status);
       setOfferings((current) => current.map((offering) => (offering.id === offeringId ? { ...offering, status: data.status } : offering)));
-      showResult("Order status updated.");
+      showResult(data.email_sent ? "Order status updated and the user was emailed." : `Order status updated${data.email_error ? `, but email could not be sent: ${data.email_error}` : "."}`);
     } catch (err) {
       setError(err.message || "Unable to update order status.");
     } finally {
@@ -2156,7 +2145,7 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
       } else if (editor.type === "order") {
         const response = await updateAdminOffering(editor.data.id, { items: editor.data.items });
         setOfferings((current) => current.map((offering) => (offering.id === editor.data.id ? response.offering : offering)));
-        showResult("Order updated.");
+        showResult(response.email_sent ? "Order updated and the user was emailed." : `Order updated${response.email_error ? `, but email could not be sent: ${response.email_error}` : "."}`);
       } else if (editor.type === "item") {
         const response = await updateAdminMenuItem(editor.data.id, { name: editor.data.name });
         setMenu(response.menu);
@@ -2344,7 +2333,7 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
         </div>
       ) : null}
 
-      {notificationPicker && isSuperAdmin ? <div className="modal-backdrop" onClick={() => setNotificationPicker(null)}><div className="modal-card notification-picker-modal" onClick={(event) => event.stopPropagation()}><div className="modal-head"><div><strong>Add Notification User</strong><p>{notificationPicker.label}</p></div><button className="modal-close" onClick={() => setNotificationPicker(null)} type="button">x</button></div><div className="modal-body"><input autoFocus className="admin-search" onChange={(event) => setNotificationSearch(event.target.value)} placeholder="Search by name or email" type="search" value={notificationSearch} /><div className="notification-picker-results">{accounts.filter((account) => account.email && ["super_admin", "admin", "annakut_admin", "volunteer_admin", "both_admin", "orders_status"].includes(account.permission) && !(notificationRecipients[notificationPicker.key] || []).includes(account.uid) && `${account.full_name} ${account.email}`.toLowerCase().includes(notificationSearch.trim().toLowerCase())).map((account) => <button key={account.uid} onClick={() => { setNotificationRecipients((current) => ({ ...current, [notificationPicker.key]: [...new Set([...(current[notificationPicker.key] || []), account.uid])] })); setNotificationPicker(null); }} type="button"><strong>{account.full_name || account.email}</strong><span>{account.email}</span><em>{String(account.permission || "").replaceAll("_", " ")}</em></button>)}</div></div></div></div> : null}
+      {notificationPicker && isSuperAdmin ? <div className="modal-backdrop" onClick={() => setNotificationPicker(null)}><div className="modal-card notification-picker-modal" onClick={(event) => event.stopPropagation()}><div className="modal-head"><div><strong>Add Notification User</strong><p>{notificationPicker.label}</p></div><button className="modal-close" onClick={() => setNotificationPicker(null)} type="button">x</button></div><div className="modal-body"><input autoFocus className="admin-search" onChange={(event) => setNotificationSearch(event.target.value)} placeholder="Search by name or email" type="search" value={notificationSearch} /><div className="notification-picker-results">{accounts.filter((account) => account.email && ["super_admin", "it", "admin", "annakut_admin", "volunteer_admin", "both_admin"].includes(account.permission) && !(notificationRecipients[notificationPicker.key] || []).includes(account.uid) && `${account.full_name} ${account.email}`.toLowerCase().includes(notificationSearch.trim().toLowerCase())).map((account) => <button key={account.uid} onClick={() => { setNotificationRecipients((current) => ({ ...current, [notificationPicker.key]: [...new Set([...(current[notificationPicker.key] || []), account.uid])] })); setNotificationPicker(null); }} type="button"><strong>{account.full_name || account.email}</strong><span>{account.email}</span><em>{String(account.permission || "").replaceAll("_", " ")}</em></button>)}</div></div></div></div> : null}
 
       {activeTab === "reports" && isFullAdmin ? <AdminReports menuItems={menuItems} offerings={offerings} /> : null}
 
@@ -2356,9 +2345,9 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
 
       {!['settings', 'reports', 'requests', 'volunteer', 'suggestions'].includes(activeTab) ? <div className="list-panel admin-table-panel">
         <strong>{activeTab === "users" ? "Registered Users" : activeTab === "items" ? "Firebase Menu Items" : "Orders"}</strong>
-        <div className="admin-mobile-export-actions">
-          <button className="mini-button" onClick={() => document.querySelector(".admin-desktop-table .buttons-pdf")?.click()} type="button">Export PDF</button>
-          <button className="mini-button" onClick={() => document.querySelector(".admin-desktop-table .buttons-excel")?.click()} type="button">Export Excel</button>
+        <div className="admin-direct-export-actions">
+          <button className="mini-button" disabled={!adminExport.rows.length} onClick={() => exportRowsToPdf(adminExport)} type="button">Export PDF</button>
+          <button className="mini-button" disabled={!adminExport.rows.length} onClick={() => exportRowsToExcel(adminExport)} type="button">Export Excel</button>
         </div>
         <AdminMobileCards
           accounts={accounts}
@@ -2368,7 +2357,7 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
           offerings={offerings}
           onCancelOrder={handleCancelOrder}
           onDeleteUser={handleDeleteUser}
-          onEdit={(type, data) => setEditor({ type, data: structuredClone(data) })}
+          onEdit={openEditor}
           onPermissionChange={handlePermissionChange}
           onRemoveItem={handleRemoveItem}
           onResetPassword={handleAdminPasswordReset}
@@ -2387,7 +2376,7 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
             offerings={offerings}
             onCancelOrder={handleCancelOrder}
             onDeleteUser={handleDeleteUser}
-            onEdit={(type, data) => setEditor({ type, data: structuredClone(data) })}
+            onEdit={openEditor}
             onPermissionChange={handlePermissionChange}
             onRemoveItem={handleRemoveItem}
             onResetPassword={handleAdminPasswordReset}
@@ -2417,12 +2406,22 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
                       </button>
                     </div>
                   ))}
-                  <label className="field-card">
+                  <label className="field-card admin-order-item-search">
                     <span>Add Item</span>
-                    <select className="admin-select" onChange={(event) => { const item = menuItems.find((entry) => entry.id === event.target.value); if (item && !editor.data.items.some((entry) => (entry.id || entry.item_id) === item.id)) setEditor({ ...editor, data: { ...editor.data, items: [...editor.data.items, { ...item, item_id: item.id, qty: 1 }] } }); event.target.value = ""; }} defaultValue="">
-                      <option value="">Select an item...</option>
-                      {menuItems.filter((item) => !editor.data.items.some((entry) => (entry.id || entry.item_id) === item.id)).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                    </select>
+                    <input className="admin-search" onChange={(event) => setOrderItemSearch(event.target.value)} placeholder="Search by item, category, or subcategory" type="search" value={orderItemSearch} />
+                    {orderItemSearch.trim() ? (
+                      <div className="admin-order-search-results">
+                        {menuItems
+                          .filter((item) => !editor.data.items.some((entry) => (entry.id || entry.item_id) === item.id))
+                          .filter((item) => `${item.name} ${item.category} ${item.subcategory}`.toLowerCase().includes(orderItemSearch.trim().toLowerCase()))
+                          .slice(0, 30)
+                          .map((item) => (
+                            <button key={item.id} onClick={() => { setEditor({ ...editor, data: { ...editor.data, items: [...editor.data.items, { ...item, item_id: item.id, qty: 1 }] } }); setOrderItemSearch(""); }} type="button">
+                              <strong>{item.name}</strong><span>{item.category} - {item.subcategory}</span>
+                            </button>
+                          ))}
+                      </div>
+                    ) : null}
                   </label>
                 </>
               ) : null}
@@ -2732,14 +2731,53 @@ function DetailsPage({ firebaseUser, cart, setDetailsState, detailsState }) {
   );
 }
 
-function ReviewPage({ firebaseUser, cart, detailsState, setCartState, setDetailsState }) {
+function ReviewPage({ existingOffering, firebaseUser, cart, detailsState, setCartState, setDetailsState }) {
   const navigate = useNavigate();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [activeOffering, setActiveOffering] = useState(existingOffering || null);
+  const [offeringLoading, setOfferingLoading] = useState(Boolean(firebaseUser && !existingOffering));
   const items = Object.values(cart);
+  const previouslySubmittedItems = activeOffering?.items || [];
   const sessionAuth = getSessionAuth();
   const verifiedEmail = firebaseUser?.email || detailsState.email || sessionAuth.email || "";
   const address = detailsState.address || sessionAuth.address || "Thunder Bay, ON";
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (existingOffering) {
+      setActiveOffering(existingOffering);
+      setOfferingLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (!firebaseUser) {
+      setOfferingLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setOfferingLoading(true);
+    findOfferings()
+      .then((data) => {
+        if (cancelled) return;
+        setActiveOffering(data.offerings?.find((offering) => offering.status !== "cancelled") || null);
+      })
+      .catch((requestError) => {
+        if (!cancelled) setError(requestError.message || "Unable to check your existing offering.");
+      })
+      .finally(() => {
+        if (!cancelled) setOfferingLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [existingOffering, firebaseUser]);
 
   if (!firebaseUser) {
     return <Navigate replace to="/rules" />;
@@ -2754,14 +2792,15 @@ function ReviewPage({ firebaseUser, cart, detailsState, setCartState, setDetails
   }
 
   async function handleSubmit() {
+    if (offeringLoading) return;
     setSaving(true);
     setError("");
 
     try {
       const { firstName, lastName } = splitFullName(detailsState.fullName);
       const response = await saveOffering({
-        mode: "new",
-        offering_id: null,
+        mode: activeOffering ? "modify" : "new",
+        offering_id: activeOffering?.id || null,
         session_id: getCartSessionId(),
         full_name: detailsState.fullName.trim(),
         first_name: firstName,
@@ -2792,7 +2831,9 @@ function ReviewPage({ firebaseUser, cart, detailsState, setCartState, setDetails
         emailSent: Boolean(response.email_sent),
         emailError: response.email_error || "",
         submittedAt: new Date().toISOString(),
-        submittedItems: items.map((item) => ({ ...item, qty: 1 })),
+        submittedItems: response.offering?.items || (activeOffering
+          ? [...(activeOffering.items || []), ...items].filter((item, index, all) => all.findIndex((entry) => (entry.id || entry.item_id) === (item.id || item.item_id)) === index)
+          : items.map((item) => ({ ...item, qty: 1 }))),
       });
       setActiveOrderId(response.offering_id);
       setCartState({});
@@ -2827,8 +2868,23 @@ function ReviewPage({ firebaseUser, cart, detailsState, setCartState, setDetails
           </div>
         </div>
 
+        {activeOffering ? (
+          <div className="receipt-panel existing-offering-review">
+            <span>Previously Submitted Items</span>
+            <p className="locked-items-note">These items are already submitted and cannot be removed.</p>
+            <div className="receipt-items">
+              {previouslySubmittedItems.map((item, index) => (
+                <div className="receipt-item locked-receipt-item" key={item.id || item.item_id || `${item.name}-${index}`}>
+                  <strong>{item.name}</strong>
+                  <span>Submitted</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         <div className="receipt-panel">
-          <span>Items Added</span>
+          <span>{activeOffering ? "Newly Added Items" : "Items Added"}</span>
           <div className="receipt-items">
             {items.map((item) => (
               <div className="receipt-item" key={item.id}>
@@ -2843,8 +2899,8 @@ function ReviewPage({ firebaseUser, cart, detailsState, setCartState, setDetails
             ))}
           </div>
           <div className="summary-row receipt-total">
-            <span>Total items</span>
-            <strong>{items.length}</strong>
+            <span>{activeOffering ? "New total items" : "Total items"}</span>
+            <strong>{previouslySubmittedItems.length + items.length}</strong>
           </div>
         </div>
 
@@ -2856,11 +2912,12 @@ function ReviewPage({ firebaseUser, cart, detailsState, setCartState, setDetails
         ) : null}
       </div>
 
+      {offeringLoading ? <div className="status-message">Checking your submitted offering...</div> : null}
       {error ? <div className="field-error show">{error}</div> : null}
 
       <div className="footer-actions">
-        <ActionButton disabled={saving} onClick={handleSubmit}>
-          {saving ? "Submitting..." : "Submit"}
+        <ActionButton disabled={saving || offeringLoading} onClick={handleSubmit}>
+          {saving ? "Submitting..." : offeringLoading ? "Checking Offering..." : "Submit"}
         </ActionButton>
         <ActionButton onClick={() => navigate("/details")} secondary>
           Back to Details
@@ -2997,7 +3054,7 @@ function SubmittedOfferingPage({ offering, offeringMessage, setCartState, setDet
       <div className="receipt-card premium-receipt confirmed-receipt submitted-only-receipt">
         <div className="receipt-header">
           <div className="receipt-brand"><span>Offering Receipt</span><strong>Annakut</strong></div>
-          <div className="receipt-status">{offering.status || "submitted"}</div>
+          <div className="receipt-status">{offering.status || "received"}</div>
         </div>
         <div className="receipt-meta-row">
           <div><span>Receipt</span><strong>{offering.receipt_no || `Offering #${offering.id}`}</strong></div>
@@ -3346,7 +3403,7 @@ export default function App() {
         path="/"
       />
       <Route
-        element={firebaseUser && accessState.offering && !hasStaffAccess ? <SubmittedOfferingPage offering={accessState.offering} offeringMessage={offeringMessage} setCartState={setCartState} setDetailsState={setDetailsState} /> : <HomePage availability={availability} cart={cart} cartCount={totalQty(cart)} firebaseUser={firebaseUser} menu={menu} setCartState={setCartState} setDetailsState={setDetailsState} />}
+        element={<HomePage availability={availability} cart={cart} cartCount={totalQty(cart)} firebaseUser={firebaseUser} menu={menu} setCartState={setCartState} setDetailsState={setDetailsState} />}
         path="/annakut"
       />
       <Route element={firebaseUser ? <VolunteerHome permission={accessState.permission} /> : <Navigate replace to="/" />} path="/volunteer" />
@@ -3393,7 +3450,7 @@ export default function App() {
         path="/details"
       />
       <Route
-        element={<ReviewPage cart={cart} detailsState={detailsState} firebaseUser={firebaseUser} setCartState={setCartState} setDetailsState={setDetailsState} />}
+        element={<ReviewPage cart={cart} detailsState={detailsState} existingOffering={!hasStaffAccess ? accessState.offering : null} firebaseUser={firebaseUser} setCartState={setCartState} setDetailsState={setDetailsState} />}
         path="/review"
       />
       <Route

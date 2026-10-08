@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 import express from "express";
 import { getFirebaseAdmin } from "./firebase.js";
-import { DEFAULT_RECEIPT_FOOTER, sendConfirmationEmail, sendNotificationEmail, sendReminderEmail } from "./mailer.js";
+import { DEFAULT_RECEIPT_FOOTER, sendConfirmationEmail, sendExpandedConfirmationEmail, sendModifiedConfirmationEmail, sendNotificationEmail, sendReminderEmail } from "./mailer.js";
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
@@ -134,7 +134,7 @@ function getAdminEmails() {
 
 function normalizePermission(value = "") {
   const permission = String(value || "").trim().toLowerCase();
-  if (["super_admin", "admin", "annakut_admin", "volunteer_admin", "both_admin", "orders_status"].includes(permission)) {
+  if (["super_admin", "it", "admin", "annakut_admin", "volunteer_admin", "both_admin"].includes(permission)) {
     return permission;
   }
 
@@ -142,15 +142,22 @@ function normalizePermission(value = "") {
 }
 
 function hasAnnakutAccess(permission) {
-  return ["super_admin", "admin", "annakut_admin", "both_admin", "orders_status"].includes(permission);
+  return ["super_admin", "it", "admin", "annakut_admin", "both_admin"].includes(permission);
 }
 
 function hasFullAnnakutAccess(permission) {
-  return ["super_admin", "admin", "annakut_admin", "both_admin"].includes(permission);
+  return ["super_admin", "it", "admin", "annakut_admin", "both_admin"].includes(permission);
 }
 
 function hasVolunteerAdminAccess(permission) {
-  return ["super_admin", "volunteer_admin", "both_admin"].includes(permission);
+  return ["super_admin", "it", "volunteer_admin", "both_admin"].includes(permission);
+}
+
+function normalizeOfferingStatus(value = "") {
+  const status = String(value || "").trim().toLowerCase();
+  if (status === "cancelled") return "cancelled";
+  if (["pickup", "picked_up"].includes(status)) return "pickup";
+  return "received";
 }
 
 async function getRequestPermission(decodedToken) {
@@ -208,7 +215,7 @@ async function requireAnyAdmin(req, res, next) {
 
 async function requireSuperAdmin(req, res, next) {
   const permission = await getRequestPermission(req.authUser);
-  if (permission !== "super_admin") {
+  if (!["super_admin", "it"].includes(permission)) {
     res.status(403).json({ ok: false, error: "Super admin access is required." });
     return;
   }
@@ -518,7 +525,7 @@ function offeringResponseShape(offering) {
     id: offering.id,
     uid: offering.uid || "",
     receipt_no: offering.receiptNo,
-    status: offering.status,
+    status: normalizeOfferingStatus(offering.status),
     pdf_downloaded: Boolean(offering.pdfDownloadedAt),
     pdf_downloaded_at: offering.pdfDownloadedAt ? formatDisplayDate(offering.pdfDownloadedAt) : null,
     created_at: formatDisplayDate(offering.createdAt),
@@ -538,7 +545,7 @@ function offeringSummaryShape(offering) {
     id: offering.id,
     uid: offering.uid || "",
     receipt_no: offering.receiptNo,
-    status: offering.status,
+    status: normalizeOfferingStatus(offering.status),
     created_at: offering.createdAt ? formatDisplayDate(offering.createdAt) : "",
     updated_at: offering.updatedAt ? formatDisplayDate(offering.updatedAt) : "",
     devotee: {
@@ -925,7 +932,7 @@ app.post("/api/find-offerings", requireFirebaseAuth, async (req, res) => {
         name: item.name || "Item",
         qty: 1,
       })),
-      status: offering.status || "",
+      status: normalizeOfferingStatus(offering.status),
       pdf_downloaded: Boolean(offering.pdfDownloadedAt),
       pdf_downloaded_at: offering.pdfDownloadedAt ? formatDisplayDate(offering.pdfDownloadedAt) : null,
     })),
@@ -1053,7 +1060,7 @@ app.patch("/api/admin/settings", requireFirebaseAuth, requireSuperAdmin, async (
   }
 
   const users = await getAllUsers();
-  const notificationPermissions = new Set(["super_admin", "admin", "annakut_admin", "volunteer_admin", "both_admin", "orders_status"]);
+  const notificationPermissions = new Set(["super_admin", "it", "admin", "annakut_admin", "volunteer_admin", "both_admin"]);
   const validUids = new Set(users.filter((user) => user.uid && user.email && notificationPermissions.has(normalizePermission(user.permission))).map((user) => user.uid));
   const notifications = {};
   for (const type of ["annakut", "volunteer", "suggestions"]) {
@@ -1252,7 +1259,7 @@ app.delete("/api/admin/users/:uid", requireFirebaseAuth, requireFullAdmin, async
   }
   const targetPermission = normalizePermission(userSnapshot.val()?.permission);
   const targetIsConfiguredSuperAdmin = getAdminEmails().includes(String(userSnapshot.val()?.email || "").toLowerCase());
-  if ((targetPermission === "super_admin" || targetIsConfiguredSuperAdmin) && req.adminPermission !== "super_admin") {
+  if ((targetPermission === "super_admin" || targetIsConfiguredSuperAdmin) && !["super_admin", "it"].includes(req.adminPermission)) {
     res.status(403).json({ ok: false, error: "Only a super admin can delete a super admin account." });
     return;
   }
@@ -1292,7 +1299,7 @@ app.get("/api/admin/offerings", requireFirebaseAuth, requireAdmin, async (_req, 
 app.post("/api/admin/offerings/:offeringId/status", requireFirebaseAuth, requireAdmin, async (req, res) => {
   const offeringId = String(req.params.offeringId || "").trim();
   const status = String(req.body?.status || "").trim().toLowerCase();
-  const allowedStatuses = new Set(["submitted", "confirmed", "preparing", "ready", "picked_up", "cancelled"]);
+  const allowedStatuses = new Set(["received", "pickup", "cancelled"]);
 
   if (!offeringId || !allowedStatuses.has(status)) {
     res.status(400).json({ ok: false, error: "Invalid order status." });
@@ -1313,7 +1320,26 @@ app.post("/api/admin/offerings/:offeringId/status", requireFirebaseAuth, require
     updatedAt: nowIso(),
   });
 
-  res.json({ ok: true, status });
+  let emailSent = false;
+  let emailError = "";
+  try {
+    const result = await sendNotificationEmail({
+      recipients: [offering.devotee?.email].filter(Boolean),
+      subject: `Your Annakut offering status is now ${status}`,
+      heading: "Your Offering Has Been Updated",
+      lines: [
+        `Receipt: ${offering.receiptNo || offering.id}`,
+        `Status: ${status}`,
+        `Items: ${(offering.items || []).map((item) => item.name).join(", ")}`,
+      ],
+    });
+    emailSent = Boolean(result?.sent);
+    emailError = result?.sent ? "" : String(result?.error || "Email was not accepted by the mail server.");
+  } catch (error) {
+    emailError = error.message || "Unable to send update email.";
+  }
+
+  res.json({ ok: true, status, email_sent: emailSent, email_error: emailError });
 });
 
 app.patch("/api/admin/offerings/:offeringId", requireFirebaseAuth, requireAdmin, async (req, res) => {
@@ -1347,6 +1373,12 @@ app.patch("/api/admin/offerings/:offeringId", requireFirebaseAuth, requireAdmin,
   }
 
   const { db } = getFirebaseAdmin();
+  const conflicts = await assertItemsAvailable({ items, sessionId: `admin-${getVerifiedUserId(req.authUser)}`, excludeOfferingId: offeringId });
+  if (conflicts.length) {
+    res.status(409).json({ ok: false, error: "Some selected items belong to another offering.", booked_items: conflicts });
+    return;
+  }
+
   await db.ref(`offerings/${offeringId}`).update({
     devotee: {
       ...(offering.devotee || {}),
@@ -1360,7 +1392,25 @@ app.patch("/api/admin/offerings/:offeringId", requireFirebaseAuth, requireAdmin,
     updatedBy: getVerifiedEmail(req.authUser),
   });
 
-  res.json({ ok: true, offering: offeringSummaryShape({ ...offering, devotee: { ...(offering.devotee || {}), full_name: fullName, email, phone, address }, items }) });
+  const selectedItemIds = new Set(items.map((item) => item.id || item.item_id));
+  const removedItems = (offering.items || []).filter((item) => !selectedItemIds.has(item.id || item.item_id));
+  const updatedOffering = {
+    ...offering,
+    devotee: { ...(offering.devotee || {}), full_name: fullName, email, phone, address },
+    items,
+  };
+
+  let emailSent = false;
+  let emailError = "";
+  try {
+    const result = await sendModifiedConfirmationEmail(updatedOffering, removedItems, await getReceiptFooterMessage());
+    emailSent = Boolean(result?.sent);
+    emailError = result?.sent ? "" : String(result?.error || "Email was not accepted by the mail server.");
+  } catch (error) {
+    emailError = error.message || "Unable to send modification email.";
+  }
+
+  res.json({ ok: true, offering: offeringSummaryShape(updatedOffering), email_sent: emailSent, email_error: emailError });
 });
 
 app.post("/api/admin/menu/categories", requireFirebaseAuth, requireFullAdmin, async (req, res) => {
@@ -1525,18 +1575,31 @@ app.post("/api/save-offering", requireFirebaseAuth, async (req, res) => {
 
   const offeringMessage = await getReceiptFooterMessage();
 
-  if (parsed.mode === "modify") {
-    res.status(403).json({
-      ok: false,
-      error: offeringMessage,
-    });
-    return;
+  const uid = getVerifiedUserId(req.authUser);
+  const existingUserOffering = (await getAllOfferings()).find((entry) => entry.uid === uid && entry.status !== "cancelled");
+  let existingOffering = null;
+  let isModify = parsed.mode === "modify";
+  if (isModify) {
+    existingOffering = await getOfferingById(parsed.offeringId);
+    if (!existingOffering || existingOffering.status === "cancelled") {
+      res.status(404).json({ ok: false, error: "Active offering not found." });
+      return;
+    }
+    if (existingOffering.uid !== uid || existingUserOffering?.id !== existingOffering.id) {
+      res.status(403).json({ ok: false, error: "You do not have access to modify this offering." });
+      return;
+    }
+  } else if (existingUserOffering) {
+    // A stale browser session may not know about the active order yet. Append to
+    // that order rather than rejecting the user's newly selected items.
+    existingOffering = existingUserOffering;
+    isModify = true;
   }
 
   const conflicts = await assertItemsAvailable({
     items: parsed.items,
     sessionId: parsed.sessionId,
-    excludeOfferingId: parsed.mode === "modify" ? parsed.offeringId : "",
+    excludeOfferingId: isModify ? existingOffering.id : "",
   });
 
   if (conflicts.length) {
@@ -1548,33 +1611,7 @@ app.post("/api/save-offering", requireFirebaseAuth, async (req, res) => {
     return;
   }
 
-  const uid = getVerifiedUserId(req.authUser);
-  const existingUserOffering = (await getAllOfferings()).find((offering) => offering.uid === uid && offering.status !== "cancelled");
-  if (existingUserOffering) {
-    res.status(409).json({
-      ok: false,
-      error: offeringMessage,
-      offering_id: existingUserOffering.id,
-      receipt_no: existingUserOffering.receiptNo || "",
-    });
-    return;
-  }
-
-  let offeringId = `user-${crypto.createHash("sha256").update(uid).digest("hex").slice(0, 32)}`;
-  let existingOffering = null;
-
-  if (parsed.mode === "modify") {
-    existingOffering = await getOfferingById(parsed.offeringId);
-    if (!existingOffering) {
-      res.status(404).json({ ok: false, error: "Offering not found" });
-      return;
-    }
-
-    if (existingOffering.uid !== getVerifiedUserId(req.authUser)) {
-      res.status(403).json({ ok: false, error: "You do not have access to modify this offering." });
-      return;
-    }
-  }
+  const offeringId = existingOffering?.id || `user-${crypto.createHash("sha256").update(uid).digest("hex").slice(0, 32)}`;
 
   let receiptNo = existingOffering?.receiptNo || "";
   if (!receiptNo) {
@@ -1583,11 +1620,42 @@ app.post("/api/save-offering", requireFirebaseAuth, async (req, res) => {
     receiptNo = createReceiptNo(transaction.snapshot.val());
   }
 
-  const offering = {
+  const normalizedNewItems = parsed.items
+    .map((item) => {
+      const name = String(item.name || "").trim();
+      if (!name) return null;
+      return {
+        id: String(item.id || item.item_id || "").trim(),
+        item_id: String(item.id || item.item_id || "").trim(),
+        category: String(item.category || "").trim(),
+        subcategory: String(item.subcategory || item.subCategory || "").trim(),
+        category_id: String(item.category_id || "").trim(),
+        subcategory_id: String(item.subcategory_id || "").trim(),
+        name,
+        qty: 1,
+      };
+    })
+    .filter((item) => item?.id);
+  const mergedItems = [...(existingOffering?.items || [])];
+  const existingItemIds = new Set(mergedItems.map((item) => item.id || item.item_id));
+  const addedItems = [];
+  for (const item of normalizedNewItems) {
+    if (!existingItemIds.has(item.id)) {
+      mergedItems.push(item);
+      addedItems.push(item);
+      existingItemIds.add(item.id);
+    }
+  }
+  if (isModify && !addedItems.length) {
+    res.status(400).json({ ok: false, error: "Select at least one new item to add to your offering." });
+    return;
+  }
+
+  let offering = {
     id: offeringId,
     uid: getVerifiedUserId(req.authUser),
     sessionId: parsed.sessionId,
-    status: "submitted",
+    status: normalizeOfferingStatus(existingOffering?.status || "received"),
     receiptNo,
     devotee: {
       full_name: parsed.fullName,
@@ -1596,25 +1664,7 @@ app.post("/api/save-offering", requireFirebaseAuth, async (req, res) => {
       address: parsed.address,
       notes: parsed.notes,
     },
-    items: parsed.items
-      .map((item) => {
-        const name = String(item.name || "").trim();
-        if (!name) {
-          return null;
-        }
-
-        return {
-          id: String(item.id || item.item_id || "").trim(),
-          item_id: String(item.id || item.item_id || "").trim(),
-          category: String(item.category || "").trim(),
-          subcategory: String(item.subcategory || item.subCategory || "").trim(),
-          category_id: String(item.category_id || "").trim(),
-          subcategory_id: String(item.subcategory_id || "").trim(),
-          name,
-          qty: 1,
-        };
-      })
-      .filter(Boolean),
+    items: mergedItems,
     receiptSnapshot: existingOffering?.receiptSnapshot || null,
     pdfDownloadedAt: existingOffering?.pdfDownloadedAt || null,
     createdAt: existingOffering?.createdAt || nowIso(),
@@ -1622,18 +1672,48 @@ app.post("/api/save-offering", requireFirebaseAuth, async (req, res) => {
   };
 
   const existingProfile = (await getUserProfile(uid)) || {};
-  const createResult = await db.ref(`offerings/${offeringId}`).transaction((current) => {
-    if (!current || current.status === "cancelled") {
-      return offering;
+  const offeringRef = db.ref(`offerings/${offeringId}`);
+  if (isModify) {
+    const latestOffering = await getOfferingById(offeringId);
+    if (!latestOffering || latestOffering.status === "cancelled" || latestOffering.uid !== uid) {
+      res.status(409).json({ ok: false, error: "This offering is no longer available to update. Please refresh the page." });
+      return;
     }
-    return undefined;
-  });
-  if (!createResult.committed || createResult.snapshot.val()?.receiptNo !== receiptNo) {
-    res.status(409).json({
-      ok: false,
-      error: offeringMessage,
+
+    const latestItems = Array.isArray(latestOffering.items) ? latestOffering.items : [];
+    const latestItemIds = new Set(latestItems.map((item) => item.id || item.item_id));
+    const updatedItems = [...latestItems];
+    for (const item of normalizedNewItems) {
+      if (!latestItemIds.has(item.id)) {
+        updatedItems.push(item);
+        latestItemIds.add(item.id);
+      }
+    }
+
+    offering = {
+      ...latestOffering,
+      ...offering,
+      id: offeringId,
+      uid,
+      items: updatedItems,
+      createdAt: latestOffering.createdAt || offering.createdAt,
+      updatedAt: nowIso(),
+    };
+    await offeringRef.set(offering);
+  } else {
+    const createResult = await offeringRef.transaction((current) => {
+      if (!current || current.status === "cancelled") return offering;
+      return undefined;
     });
-    return;
+    if (!createResult.committed) {
+      console.error("New offering transaction was not committed", { offeringId, uid });
+      res.status(409).json({
+        ok: false,
+        error: "An active offering already exists for this account. Please refresh the page to add items to it.",
+      });
+      return;
+    }
+    offering = { ...offering, ...createResult.snapshot.val(), id: offeringId };
   }
 
   await db.ref().update({
@@ -1660,8 +1740,9 @@ app.post("/api/save-offering", requireFirebaseAuth, async (req, res) => {
   let emailSent = false;
   let emailError = "";
   try {
-    const { db } = getFirebaseAdmin();
-    const mailResult = await sendConfirmationEmail(offering, offeringMessage);
+    const mailResult = isModify
+      ? await sendExpandedConfirmationEmail(offering, addedItems, offeringMessage)
+      : await sendConfirmationEmail(offering, offeringMessage);
     emailSent = Boolean(mailResult?.sent);
     emailError = mailResult?.sent ? "" : String(mailResult?.error || "Email was not accepted by the mail server.");
   } catch (error) {
@@ -1671,12 +1752,12 @@ app.post("/api/save-offering", requireFirebaseAuth, async (req, res) => {
   }
 
   try {
-    await sendNotificationEmail({ recipients: await getNotificationRecipients("annakut"), subject: `New Annakut Offering - ${offering.receiptNo}`, heading: "New Annakut Offering", lines: [`Devotee: ${offering.devotee.full_name}`, `Phone: ${offering.devotee.phone}`, `Items: ${offering.items.map((item) => item.name).join(", ")}`] });
+    await sendNotificationEmail({ recipients: await getNotificationRecipients("annakut"), subject: `${isModify ? "Updated" : "New"} Annakut Offering - ${offering.receiptNo}`, heading: `${isModify ? "Updated" : "New"} Annakut Offering`, lines: [`Devotee: ${offering.devotee.full_name}`, `Phone: ${offering.devotee.phone}`, `Items: ${offering.items.map((item) => item.name).join(", ")}`] });
   } catch (error) {
     console.error("Annakut admin notification failed:", error);
   }
 
-  res.json({ ok: true, offering_id: offeringId, receipt_no: receiptNo, email_sent: emailSent, email_error: emailError });
+  res.json({ ok: true, offering_id: offeringId, receipt_no: receiptNo, offering: offeringResponseShape(offering), email_sent: emailSent, email_error: emailError });
 });
 
 app.post("/api/mark-pdf-downloaded", requireFirebaseAuth, async (req, res) => {

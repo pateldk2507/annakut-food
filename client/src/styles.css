@@ -778,6 +778,27 @@ button {
   font-style: normal;
 }
 
+.locked-items-note {
+  margin: 6px 0 12px;
+  color: #7a5a49;
+  font-size: 0.86rem;
+}
+
+.locked-receipt-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.locked-receipt-item > span {
+  color: #8b5e34;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .conflict-banner {
   padding: 16px 18px;
   border-radius: 20px;
@@ -2107,13 +2128,18 @@ button {
 }
 
 .admin-table-panel {
-  overflow: hidden;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .admin-table-wrap {
   width: 100%;
+  max-width: 100%;
   margin-top: 14px;
-  overflow-x: visible;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .admin-table-wrap .dt-container {
@@ -2223,6 +2249,40 @@ button {
   color: #5c2d17;
   padding: 9px 10px;
   font-weight: 700;
+}
+
+.admin-order-item-search {
+  position: relative;
+}
+
+.admin-order-search-results {
+  display: grid;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid rgba(104, 56, 27, 0.2);
+  border-radius: 12px;
+  background: #fffaf1;
+}
+
+.admin-order-search-results button {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid rgba(104, 56, 27, 0.12);
+  background: transparent;
+  color: #3d1d13;
+  text-align: left;
+}
+
+.admin-order-search-results button:hover,
+.admin-order-search-results button:focus-visible {
+  background: #f7e7c7;
+}
+
+.admin-order-search-results button span {
+  color: #78542f;
+  font-size: 0.78rem;
 }
 
 .admin-edit-modal {
@@ -2508,7 +2568,16 @@ button {
 }
 
 .report-output {
-  overflow: hidden;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.admin-direct-export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .report-mobile-cards {
@@ -2560,6 +2629,30 @@ button {
   .admin-add-item {
     grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
     align-items: end;
+  }
+}
+
+@media (min-width: 760px) {
+  .admin-table-panel,
+  .report-output {
+    overflow-x: auto;
+  }
+
+  .admin-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .admin-table-wrap .dt-container {
+    min-width: 1080px;
+  }
+
+  .report-desktop-table .dt-container {
+    min-width: 820px;
+  }
+
+  .admin-table-wrap table.dataTable {
+    min-width: 100% !important;
   }
 }
 
