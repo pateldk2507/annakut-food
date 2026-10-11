@@ -60,6 +60,7 @@ import {
   updateAdminOffering,
   updateAdminOfferingStatus,
   updateAdminSettings,
+  updateAdminSuggestionStatus,
   updateAdminUser,
   updateAdminUserPermission,
 } from "./lib/api";
@@ -2053,7 +2054,9 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
 
   function openEditor(type, data) {
     setOrderItemSearch("");
-    setEditor({ type, data: structuredClone(data) });
+    const editorData = structuredClone(data);
+    if (type === "item") editorData.originalName = data.name || "";
+    setEditor({ type, data: editorData });
   }
 
   function confirmAdminPromotion(uid, permission) {
@@ -2147,7 +2150,12 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
         setOfferings((current) => current.map((offering) => (offering.id === editor.data.id ? response.offering : offering)));
         showResult(response.email_sent ? "Order updated and the user was emailed." : `Order updated${response.email_error ? `, but email could not be sent: ${response.email_error}` : "."}`);
       } else if (editor.type === "item") {
-        const response = await updateAdminMenuItem(editor.data.id, { name: editor.data.name });
+        const response = await updateAdminMenuItem(editor.data.id, {
+          name: editor.data.name,
+          original_name: editor.data.originalName,
+          category_id: editor.data.categoryId,
+          subcategory_id: editor.data.subcategoryId,
+        });
         setMenu(response.menu);
         showResult("Menu item updated in Firebase.");
       }
@@ -2270,6 +2278,20 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
     }
   }
 
+  async function handleCompleteSuggestion(suggestion) {
+    if (!window.confirm("Mark this suggestion as completed?")) return;
+    setSavingId(`suggestion-${suggestion.id}`);
+    try {
+      const response = await updateAdminSuggestionStatus(suggestion.id, "completed");
+      setSuggestions((current) => current.map((entry) => (entry.id === suggestion.id ? response.suggestion : entry)));
+      showResult("Suggestion marked as completed.");
+    } catch (err) {
+      setError(err.message || "Unable to update the suggestion.");
+    } finally {
+      setSavingId("");
+    }
+  }
+
   const activeCategories = menu.categories || [];
   const selectedCategory = activeCategories.find((category) => category.id === newItem.categoryId);
   const adminPageTitle = {
@@ -2339,7 +2361,7 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
 
       {activeTab === "volunteer" && isVolunteerAdmin ? <VolunteerAdminContent /> : null}
 
-      {activeTab === "suggestions" ? <div className="admin-suggestion-list">{suggestions.length ? suggestions.map((suggestion) => <article className="list-panel admin-suggestion-card" key={suggestion.id}><header><strong>{suggestion.submittedBy || "User"}</strong><span>{suggestion.email || ""}</span></header><p>{suggestion.message}</p><footer>{suggestion.createdAt ? new Date(suggestion.createdAt).toLocaleString("en-CA") : ""}</footer></article>) : <div className="empty-state">No suggestions have been submitted.</div>}</div> : null}
+      {activeTab === "suggestions" ? <div className="admin-suggestion-list">{suggestions.length ? suggestions.map((suggestion) => <article className={`list-panel admin-suggestion-card ${suggestion.status === "completed" ? "completed" : ""}`} key={suggestion.id}><header><strong>{suggestion.submittedBy || "User"}</strong><span>{suggestion.email || ""}</span></header><p>{suggestion.message}</p><footer><span>{suggestion.createdAt ? new Date(suggestion.createdAt).toLocaleString("en-CA") : ""}</span>{suggestion.status === "completed" ? <span className="suggestion-status completed">Completed</span> : <button className="mini-button" disabled={savingId === `suggestion-${suggestion.id}`} onClick={() => handleCompleteSuggestion(suggestion)} type="button">{savingId === `suggestion-${suggestion.id}` ? "Saving..." : "Mark Completed"}</button>}</footer></article>) : <div className="empty-state">No suggestions have been submitted.</div>}</div> : null}
 
       {activeTab === "requests" && isFullAdmin ? <AdminItemRequests itemRequests={itemRequests} menu={menu} onApprove={handleApproveItemRequest} onDelete={handleDeleteItemRequest} savingId={savingId} /> : null}
 

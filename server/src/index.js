@@ -91,8 +91,27 @@ function slugify(value = "") {
     .replace(/^-+|-+$/g, "");
 }
 
+function normalizeMenuItemId(value = "") {
+  let decoded = String(value || "");
+  try {
+    decoded = decodeURIComponent(decoded);
+  } catch {
+    // Express normally decodes route parameters; retain the original if malformed.
+  }
+  return decoded.replace(/^[\s\u00a0\u2007\u202f]+|[\s\u00a0\u2007\u202f]+$/gu, "");
+}
+
 function normalizePhone(value = "") {
   return String(value).replace(/\D/g, "");
+}
+
+function formatTime12Hour(value = "") {
+  const match = String(value).match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return String(value);
+  const hour = Number(match[1]);
+  if (hour < 0 || hour > 23) return String(value);
+  const displayHour = hour % 12 || 12;
+  return `${displayHour}:${match[2]} ${hour >= 12 ? "PM" : "AM"}`;
 }
 
 function nowIso() {
@@ -748,7 +767,7 @@ app.post("/api/suggestions", requireFirebaseAuth, async (req, res) => {
   const profile = await getUserProfile(uid);
   const { db } = getFirebaseAdmin();
   const suggestionRef = db.ref("suggestions").push();
-  const suggestion = { id: suggestionRef.key, uid, message, submittedBy: profile?.fullName || getVerifiedEmail(req.authUser) || "User", email: getVerifiedEmail(req.authUser), createdAt: nowIso() };
+  const suggestion = { id: suggestionRef.key, uid, message, status: "pending", submittedBy: profile?.fullName || getVerifiedEmail(req.authUser) || "User", email: getVerifiedEmail(req.authUser), createdAt: nowIso() };
   await suggestionRef.set(suggestion);
   try {
     await sendNotificationEmail({ recipients: await getNotificationRecipients("suggestions"), subject: "New Seva Portal Suggestion", heading: "New Suggestion", lines: [`From: ${suggestion.submittedBy}`, `Email: ${suggestion.email}`, `Suggestion: ${message}`] });
@@ -989,7 +1008,7 @@ app.put("/api/volunteer/availability", requireFirebaseAuth, async (req, res) => 
   };
   const { db } = getFirebaseAdmin();
   await db.ref(`volunteerAvailability/${uid}`).set(availability);
-  const dateLines = Object.entries(dates).map(([date, slots]) => `${date}: ${slots.map((slot) => `${slot.from}-${slot.to}`).join(", ")}`);
+  const dateLines = Object.entries(dates).map(([date, slots]) => `${date}: ${slots.map((slot) => `${formatTime12Hour(slot.from)} - ${formatTime12Hour(slot.to)}`).join(", ")}`);
   try {
     const volunteerEmail = getVerifiedEmail(req.authUser) || profile?.email || "";
     await sendNotificationEmail({ recipients: [volunteerEmail], subject: "Volunteer Seva Confirmation", heading: "Your Volunteer Seva Is Confirmed", lines: [`Volunteer: ${availability.fullName}`, `Phone: ${availability.phone}`, ...dateLines, "Thank you for offering your time in seva."] });
@@ -1084,8 +1103,30 @@ app.patch("/api/admin/settings", requireFirebaseAuth, requireSuperAdmin, async (
 app.get("/api/admin/suggestions", requireFirebaseAuth, requireAnyAdmin, async (_req, res) => {
   const { db } = getFirebaseAdmin();
   const snapshot = await db.ref("suggestions").get();
-  const suggestions = Object.entries(snapshot.val() || {}).map(([id, suggestion]) => ({ id, ...suggestion })).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  const suggestions = Object.entries(snapshot.val() || {}).map(([id, suggestion]) => ({ id, ...suggestion, status: suggestion.status === "completed" ? "completed" : "pending" })).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   res.json({ ok: true, suggestions });
+});
+
+app.patch("/api/admin/suggestions/:suggestionId/status", requireFirebaseAuth, requireAnyAdmin, async (req, res) => {
+  const suggestionId = String(req.params.suggestionId || "").trim();
+  const status = String(req.body?.status || "").trim().toLowerCase();
+  if (!suggestionId || status !== "completed") {
+    res.status(400).json({ ok: false, error: "A valid suggestion and completed status are required." });
+    return;
+  }
+
+  const { db } = getFirebaseAdmin();
+  const suggestionRef = db.ref(`suggestions/${suggestionId}`);
+  const snapshot = await suggestionRef.get();
+  if (!snapshot.exists()) {
+    res.status(404).json({ ok: false, error: "Suggestion was not found." });
+    return;
+  }
+
+  const completedAt = nowIso();
+  const completedBy = getVerifiedEmail(req.authUser) || getVerifiedUserId(req.authUser);
+  await suggestionRef.update({ status, completedAt, completedBy });
+  res.json({ ok: true, suggestion: { id: suggestionId, ...snapshot.val(), status, completedAt, completedBy } });
 });
 
 app.get("/api/admin/accounts", requireFirebaseAuth, requireFullAdmin, async (_req, res) => {
@@ -1452,63 +1493,83 @@ app.post("/api/admin/menu/items", requireFirebaseAuth, requireFullAdmin, async (
   }
 
   const { db } = getFirebaseAdmin();
-  const menuRef = db.ref("menu");
-  await getMenu();
-  let createdItem = null;
-  const result = await menuRef.transaction((menu) => {
-    const category = (menu?.categories || []).find((entry) => entry.id === categoryId);
-    const subcategory = (category?.subcategories || []).find((entry) => entry.id === subcategoryId);
-    if (!subcategory) {
-      return;
+  const menu = await getMenu();
+  let subcategoryPath = "";
+  let selectedSubcategory = null;
+  for (const [categoryKey, category] of Object.entries(menu?.categories || {})) {
+    if (String(category?.id || "").trim().toLowerCase() !== categoryId.toLowerCase()) continue;
+    for (const [subcategoryKey, subcategory] of Object.entries(category?.subcategories || {})) {
+      if (String(subcategory?.id || "").trim().toLowerCase() === subcategoryId.toLowerCase()) {
+        subcategoryPath = `menu/categories/${categoryKey}/subcategories/${subcategoryKey}/items`;
+        selectedSubcategory = subcategory;
+        break;
+      }
     }
-    const baseId = `${categoryId}-${subcategoryId}-${slugify(name)}`;
-    let id = baseId;
-    let suffix = 2;
-    while ((subcategory.items || []).some((item) => item.id === id)) {
-      id = `${baseId}-${suffix}`;
-      suffix += 1;
-    }
-    createdItem = { id, name };
-    subcategory.items = [...(subcategory.items || []), createdItem];
-    return menu;
-  });
-  if (!result.committed || !createdItem) {
+    if (subcategoryPath) break;
+  }
+  if (!subcategoryPath || !selectedSubcategory) {
     res.status(404).json({ ok: false, error: "Category or subcategory was not found." });
     return;
   }
-  res.json({ ok: true, item: createdItem, menu: result.snapshot.val() });
+
+  const items = Object.values(selectedSubcategory.items || {});
+  const baseId = `${categoryId}-${subcategoryId}-${slugify(name)}`;
+  let id = baseId;
+  let suffix = 2;
+  while (items.some((item) => normalizeMenuItemId(item?.id).toLowerCase() === id.toLowerCase())) {
+    id = `${baseId}-${suffix}`;
+    suffix += 1;
+  }
+  const createdItem = { id, name };
+  await db.ref(subcategoryPath).set([...items, createdItem]);
+  res.json({ ok: true, item: createdItem, menu: await getMenu() });
 });
 
 app.patch("/api/admin/menu/items/:itemId", requireFirebaseAuth, requireFullAdmin, async (req, res) => {
-  const itemId = String(req.params.itemId || "").trim();
+  const itemId = normalizeMenuItemId(req.params.itemId);
   const name = String(req.body?.name || "").trim();
+  const originalName = String(req.body?.original_name || "").trim();
+  const categoryId = String(req.body?.category_id || "").trim();
+  const subcategoryId = String(req.body?.subcategory_id || "").trim();
   if (!itemId || !name) {
     res.status(400).json({ ok: false, error: "Item name is required." });
     return;
   }
 
   const { db } = getFirebaseAdmin();
-  const menuRef = db.ref("menu");
-  await getMenu();
-  let found = false;
-  const result = await menuRef.transaction((menu) => {
-    for (const category of menu?.categories || []) {
-      for (const subcategory of category.subcategories || []) {
-        const item = (subcategory.items || []).find((entry) => entry.id === itemId);
-        if (item) {
-          item.name = name;
-          found = true;
-          return menu;
+  const menu = await getMenu();
+  let itemPath = "";
+  let storedItemId = "";
+  for (const [categoryKey, category] of Object.entries(menu?.categories || {})) {
+    for (const [subcategoryKey, subcategory] of Object.entries(category?.subcategories || {})) {
+      for (const [itemKey, item] of Object.entries(subcategory?.items || {})) {
+        const exactIdMatch = normalizeMenuItemId(item?.id).toLowerCase() === itemId.toLowerCase();
+        const contextualNameMatch = Boolean(
+          originalName &&
+          categoryId &&
+          subcategoryId &&
+          String(category?.id || "") === categoryId &&
+          String(subcategory?.id || "") === subcategoryId &&
+          String(item?.name || "").trim().toLowerCase() === originalName.toLowerCase()
+        );
+        if (exactIdMatch || contextualNameMatch) {
+          itemPath = `menu/categories/${categoryKey}/subcategories/${subcategoryKey}/items/${itemKey}`;
+          storedItemId = item.id || itemId;
+          break;
         }
       }
+      if (itemPath) break;
     }
-    return;
-  });
-  if (!result.committed || !found) {
+    if (itemPath) break;
+  }
+  if (!itemPath) {
     res.status(404).json({ ok: false, error: "Menu item was not found." });
     return;
   }
-  res.json({ ok: true, item: { id: itemId, name }, menu: result.snapshot.val() });
+
+  await db.ref(itemPath).update({ name });
+  const updatedMenu = await getMenu();
+  res.json({ ok: true, item: { id: storedItemId, name }, menu: updatedMenu });
 });
 
 app.delete("/api/admin/menu/items/:itemId", requireFirebaseAuth, requireFullAdmin, async (req, res) => {

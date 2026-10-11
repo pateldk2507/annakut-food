@@ -173,6 +173,14 @@ export function fetchAdminSuggestions() {
   return request("/api/admin/suggestions", { requiresAuth: true });
 }
 
+export function updateAdminSuggestionStatus(suggestionId, status) {
+  return request(`/api/admin/suggestions/${encodeURIComponent(suggestionId)}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+    requiresAuth: true,
+  });
+}
+
 export function approveAdminItemRequest(requestId, payload) {
   return request(`/api/admin/item-requests/${encodeURIComponent(requestId)}/approve`, {
     method: "POST",
