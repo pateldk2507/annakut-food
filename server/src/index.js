@@ -1190,36 +1190,46 @@ app.post("/api/admin/item-requests/:requestId/approve", requireFirebaseAuth, req
     return;
   }
 
-  const menuRef = db.ref("menu");
-  await getMenu();
-  let createdItem = null;
-  const result = await menuRef.transaction((menu) => {
-    const category = (menu?.categories || []).find((entry) => entry.id === categoryId);
-    const subcategory = (category?.subcategories || []).find((entry) => entry.id === subcategoryId);
-    if (!subcategory) return;
-    const baseId = `${categoryId}-${subcategoryId}-${slugify(itemRequest.name)}`;
-    let id = baseId;
-    let suffix = 2;
-    while ((subcategory.items || []).some((item) => item.id === id)) id = `${baseId}-${suffix++}`;
-    createdItem = { id, name: itemRequest.name };
-    subcategory.items = [...(subcategory.items || []), createdItem];
-    return menu;
-  });
-  if (!result.committed || !createdItem) {
+  const menu = await getMenu();
+  let itemsPath = "";
+  let selectedSubcategory = null;
+  for (const [categoryKey, category] of Object.entries(menu?.categories || {})) {
+    if (String(category?.id || "").trim().toLowerCase() !== categoryId.toLowerCase()) continue;
+    for (const [subcategoryKey, subcategory] of Object.entries(category?.subcategories || {})) {
+      if (String(subcategory?.id || "").trim().toLowerCase() === subcategoryId.toLowerCase()) {
+        itemsPath = `menu/categories/${categoryKey}/subcategories/${subcategoryKey}/items`;
+        selectedSubcategory = subcategory;
+        break;
+      }
+    }
+    if (itemsPath) break;
+  }
+  if (!itemsPath || !selectedSubcategory) {
     res.status(404).json({ ok: false, error: "Category or subcategory was not found." });
     return;
   }
 
+  const items = Object.values(selectedSubcategory.items || {});
+  const baseId = `${categoryId}-${subcategoryId}-${slugify(itemRequest.name)}`;
+  let id = baseId;
+  let suffix = 2;
+  while (items.some((item) => normalizeMenuItemId(item?.id).toLowerCase() === id.toLowerCase())) {
+    id = `${baseId}-${suffix}`;
+    suffix += 1;
+  }
+  const createdItem = { id, name: itemRequest.name };
   const approvedAt = nowIso();
-  await requestRef.update({
-    status: "approved",
-    categoryId,
-    subcategoryId,
-    itemId: createdItem.id,
-    approvedAt,
-    approvedBy: getVerifiedEmail(req.authUser),
+  const approvedBy = getVerifiedEmail(req.authUser);
+  await db.ref().update({
+    [itemsPath]: [...items, createdItem],
+    [`itemRequests/${requestId}/status`]: "approved",
+    [`itemRequests/${requestId}/categoryId`]: categoryId,
+    [`itemRequests/${requestId}/subcategoryId`]: subcategoryId,
+    [`itemRequests/${requestId}/itemId`]: createdItem.id,
+    [`itemRequests/${requestId}/approvedAt`]: approvedAt,
+    [`itemRequests/${requestId}/approvedBy`]: approvedBy,
   });
-  res.json({ ok: true, item: createdItem, menu: result.snapshot.val(), request: { ...itemRequest, id: requestId, status: "approved", categoryId, subcategoryId, itemId: createdItem.id, approvedAt } });
+  res.json({ ok: true, item: createdItem, menu: await getMenu(), request: { ...itemRequest, id: requestId, status: "approved", categoryId, subcategoryId, itemId: createdItem.id, approvedAt, approvedBy } });
 });
 
 app.post("/api/admin/users/:uid/permission", requireFirebaseAuth, requireSuperAdmin, async (req, res) => {

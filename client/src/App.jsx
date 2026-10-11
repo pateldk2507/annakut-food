@@ -35,7 +35,6 @@ import {
   addAdminMenuItem,
   addAdminMenuCategory,
   approveAdminItemRequest,
-  deleteAdminItemRequest,
   deleteAdminUser,
   fetchBookedItems,
   fetchAdminAccounts,
@@ -1682,7 +1681,7 @@ function AdminMobileCards({ activeTab, accounts, canManagePermissions, offerings
   );
 }
 
-function RequestedItemCard({ itemRequest, menu, onApprove, onDelete, saving }) {
+function RequestedItemCard({ itemRequest, menu, onApprove, saving }) {
   const [categoryId, setCategoryId] = useState(itemRequest.categoryId || "");
   const [subcategoryId, setSubcategoryId] = useState(itemRequest.subcategoryId || "");
   const category = (menu.categories || []).find((entry) => entry.id === categoryId);
@@ -1699,17 +1698,16 @@ function RequestedItemCard({ itemRequest, menu, onApprove, onDelete, saving }) {
           <button className="mini-button" disabled={saving || !categoryId || !subcategoryId} onClick={() => onApprove(itemRequest, categoryId, subcategoryId)} type="button">{saving ? "Approving..." : "Approve & Add"}</button>
         </div>
       ) : <div className="requested-item-approved">Added to the menu</div>}
-      <button className="mini-button danger" disabled={saving} onClick={() => onDelete(itemRequest)} type="button">Delete Request</button>
     </article>
   );
 }
 
-function AdminItemRequests({ itemRequests, menu, onApprove, onDelete, savingId }) {
+function AdminItemRequests({ itemRequests, menu, onApprove, savingId }) {
   return (
     <div className="list-panel requested-items-panel">
       <strong>Requested Offering Items</strong>
       <div className="requested-items-list">
-        {itemRequests.length ? itemRequests.map((itemRequest) => <RequestedItemCard itemRequest={itemRequest} key={itemRequest.id} menu={menu} onApprove={onApprove} onDelete={onDelete} saving={savingId === itemRequest.id} />) : <div className="empty-state">No offering items have been requested.</div>}
+        {itemRequests.length ? itemRequests.map((itemRequest) => <RequestedItemCard itemRequest={itemRequest} key={itemRequest.id} menu={menu} onApprove={onApprove} saving={savingId === itemRequest.id} />) : <div className="empty-state">No offering items have been requested.</div>}
       </div>
     </div>
   );
@@ -2220,20 +2218,6 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
     }
   }
 
-  async function handleDeleteItemRequest(itemRequest) {
-    if (!window.confirm(`Delete the request for ${itemRequest.name}? This cannot be undone.`)) return;
-    setSavingId(itemRequest.id);
-    try {
-      await deleteAdminItemRequest(itemRequest.id);
-      setItemRequests((current) => current.filter((entry) => entry.id !== itemRequest.id));
-      showResult(`${itemRequest.name} request was deleted.`);
-    } catch (err) {
-      setError(err.message || "Unable to delete this requested item.");
-    } finally {
-      setSavingId("");
-    }
-  }
-
   async function handleRemoveItem(item) {
     if (!window.confirm(`Remove ${item.name} from the menu?`)) return;
     setSavingId(item.id);
@@ -2363,7 +2347,7 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
 
       {activeTab === "suggestions" ? <div className="admin-suggestion-list">{suggestions.length ? suggestions.map((suggestion) => <article className={`list-panel admin-suggestion-card ${suggestion.status === "completed" ? "completed" : ""}`} key={suggestion.id}><header><strong>{suggestion.submittedBy || "User"}</strong><span>{suggestion.email || ""}</span></header><p>{suggestion.message}</p><footer><span>{suggestion.createdAt ? new Date(suggestion.createdAt).toLocaleString("en-CA") : ""}</span>{suggestion.status === "completed" ? <span className="suggestion-status completed">Completed</span> : <button className="mini-button" disabled={savingId === `suggestion-${suggestion.id}`} onClick={() => handleCompleteSuggestion(suggestion)} type="button">{savingId === `suggestion-${suggestion.id}` ? "Saving..." : "Mark Completed"}</button>}</footer></article>) : <div className="empty-state">No suggestions have been submitted.</div>}</div> : null}
 
-      {activeTab === "requests" && isFullAdmin ? <AdminItemRequests itemRequests={itemRequests} menu={menu} onApprove={handleApproveItemRequest} onDelete={handleDeleteItemRequest} savingId={savingId} /> : null}
+      {activeTab === "requests" && isFullAdmin ? <AdminItemRequests itemRequests={itemRequests} menu={menu} onApprove={handleApproveItemRequest} savingId={savingId} /> : null}
 
       {!['settings', 'reports', 'requests', 'volunteer', 'suggestions'].includes(activeTab) ? <div className="list-panel admin-table-panel">
         <strong>{activeTab === "users" ? "Registered Users" : activeTab === "items" ? "Firebase Menu Items" : "Orders"}</strong>
