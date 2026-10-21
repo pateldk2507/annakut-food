@@ -13,6 +13,7 @@ import "datatables.net-responsive-dt/css/responsive.dataTables.css";
 import resetPasswordIcon from "./assets/reset-password.png";
 import sevaLightBackground from "./assets/seva-light-bg.png";
 import { VolunteerAdmin, VolunteerAdminContent, VolunteerHome } from "./VolunteerPortal";
+import MinimumRequirements from "./MinimumRequirements";
 import {
   getCart,
   getCartSessionId,
@@ -2737,7 +2738,7 @@ function DetailsPage({ firebaseUser, cart, setDetailsState, detailsState }) {
   );
 }
 
-function ReviewPage({ existingOffering, firebaseUser, cart, detailsState, setCartState, setDetailsState }) {
+function ReviewPage({ existingOffering, firebaseUser, cart, detailsState, setCartState, setDetailsState, showRequirements = false }) {
   const navigate = useNavigate();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -2797,8 +2798,12 @@ function ReviewPage({ existingOffering, firebaseUser, cart, detailsState, setCar
     return <Navigate replace to="/details" />;
   }
 
-  async function handleSubmit() {
-    if (offeringLoading) return;
+  async function handleSubmit(requirementsAccepted, checkedRequirements) {
+    if (offeringLoading || saving) return;
+    if (requirementsAccepted !== true) {
+      setError("Please read and acknowledge the minimum requirements before submitting your offering.");
+      return;
+    }
     setSaving(true);
     setError("");
 
@@ -2808,6 +2813,8 @@ function ReviewPage({ existingOffering, firebaseUser, cart, detailsState, setCar
         mode: activeOffering ? "modify" : "new",
         offering_id: activeOffering?.id || null,
         session_id: getCartSessionId(),
+        requirements_accepted: requirementsAccepted,
+        requirements_checked: checkedRequirements,
         full_name: detailsState.fullName.trim(),
         first_name: firstName,
         last_name: lastName,
@@ -2849,6 +2856,14 @@ function ReviewPage({ existingOffering, firebaseUser, cart, detailsState, setCar
     } finally {
       setSaving(false);
     }
+  }
+
+  if (showRequirements) {
+    return (
+      <AppShell background={backgrounds.review} screenClassName="screen-requirements" title="Minimum Requirements" subtitle="Before proceeding with your annakut seva commitment, please read and acknowledge the following requirements.">
+        <MinimumRequirements error={error} loading={offeringLoading} onBack={() => navigate("/review")} onSubmit={handleSubmit} saving={saving} />
+      </AppShell>
+    );
   }
 
   return (
@@ -2922,8 +2937,8 @@ function ReviewPage({ existingOffering, firebaseUser, cart, detailsState, setCar
       {error ? <div className="field-error show">{error}</div> : null}
 
       <div className="footer-actions">
-        <ActionButton disabled={saving || offeringLoading} onClick={handleSubmit}>
-          {saving ? "Submitting..." : offeringLoading ? "Checking Offering..." : "Submit"}
+        <ActionButton disabled={offeringLoading} onClick={() => navigate("/requirements")}>
+          {offeringLoading ? "Checking Offering..." : "Continue to Requirements"}
         </ActionButton>
         <ActionButton onClick={() => navigate("/details")} secondary>
           Back to Details
@@ -3370,7 +3385,7 @@ export default function App() {
 
   const hasStaffAccess = hasAnnakutAdminAccess(accessState.permission);
 
-  const menuRoutes = ["/annakut", "/category", "/subcategory", "/food-list", "/cart", "/details", "/review", "/admin"];
+  const menuRoutes = ["/annakut", "/category", "/subcategory", "/food-list", "/cart", "/details", "/review", "/requirements", "/admin"];
   const routeNeedsMenu = menuRoutes.includes(location.pathname);
 
   if (routeNeedsMenu && menuLoading) {
@@ -3458,6 +3473,10 @@ export default function App() {
       <Route
         element={<ReviewPage cart={cart} detailsState={detailsState} existingOffering={!hasStaffAccess ? accessState.offering : null} firebaseUser={firebaseUser} setCartState={setCartState} setDetailsState={setDetailsState} />}
         path="/review"
+      />
+      <Route
+        element={<ReviewPage cart={cart} detailsState={detailsState} existingOffering={!hasStaffAccess ? accessState.offering : null} firebaseUser={firebaseUser} setCartState={setCartState} setDetailsState={setDetailsState} showRequirements />}
+        path="/requirements"
       />
       <Route
         element={<ConfirmedPage cart={cart} detailsState={detailsState} offeringMessage={offeringMessage} setCartState={setCartState} setDetailsState={setDetailsState} />}

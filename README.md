@@ -13,7 +13,9 @@ This repo contains the Node.js + React version of the Annakut offering flow, usi
 
 The app supports the current seva journey:
 
-`Home -> Rules -> Category -> Subcategory -> Food List -> Cart -> Details -> Summary -> Confirmed`
+`Home -> Rules -> Category -> Subcategory -> Food List -> Cart -> Details -> Summary -> Minimum Requirements -> Confirmed`
+
+Before submitting a new offering or adding items to an existing offering, devotees must manually check each of the 11 cooking guidelines and the final acknowledgment on the Minimum Requirements page. The API requires `requirements_accepted: true` and a `requirements_checked` array containing exactly 11 `true` values. It records the checklist as `requirementsChecked` and the acknowledgment time as `requirementsAcknowledgedAt` on the offering.
 
 It also supports modifying an existing offering, booked-item locking, reminder emails for released held items, and PDF receipt download.
 

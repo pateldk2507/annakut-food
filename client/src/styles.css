@@ -1146,6 +1146,115 @@ button {
   line-height: 1.55;
 }
 
+.screen-requirements .screen-content {
+  padding-top: calc(60px + env(safe-area-inset-top, 0px));
+}
+
+.screen-requirements .screen-header-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.screen-requirements .screen-header-side {
+  display: none;
+}
+
+.screen-requirements .screen-subtitle {
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1.65;
+}
+
+.requirements-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.requirements-notice {
+  overflow: hidden;
+  border: 1px solid #dec7a3;
+  border-radius: 20px;
+  background: #fffaf0;
+}
+
+.requirements-notice h2 {
+  margin: 0;
+  padding: 16px;
+  border-bottom: 1px solid #dec7a3;
+  background: #f5e6cc;
+  color: #6e2116;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.requirements-notice h3 {
+  margin: 0;
+  padding: 20px 16px 0;
+  font-size: 1.05rem;
+  line-height: 1.8;
+}
+
+.requirements-notice [lang="gu"] {
+  font-family: "Noto Sans Gujarati", "Nirmala UI", "Shruti", sans-serif;
+}
+
+.requirements-list {
+  margin: 0;
+  padding: 0 16px;
+  list-style: none;
+  font-size: 1rem;
+  line-height: 1.9;
+  overflow-wrap: anywhere;
+}
+
+.requirements-list li {
+  padding: 18px 0;
+}
+
+.requirements-list li + li {
+  border-top: 1px solid #eadcc5;
+}
+
+.requirement-check {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.requirements-acknowledgment {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 16px;
+  border: 1px solid #dec7a3;
+  border-radius: 18px;
+  background: #fffaf0;
+  font-size: 0.95rem;
+  line-height: 1.65;
+  cursor: pointer;
+}
+
+.requirements-acknowledgment.accepted {
+  border-color: #996b32;
+  background: #f5e6cc;
+}
+
+.requirements-acknowledgment input,
+.requirement-check input {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  margin: 2px 0 0;
+  accent-color: #7d150e;
+}
+
+.requirements-form :focus-visible {
+  outline: 3px solid #996b32;
+  outline-offset: 4px;
+}
+
 .disabled-input {
   opacity: 0.72;
   cursor: not-allowed;

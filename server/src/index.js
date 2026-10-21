@@ -640,6 +640,15 @@ function validatePayload(payload, verifiedEmail) {
     return { error: "Cart is empty" };
   }
 
+  if (payload.requirements_accepted !== true) {
+    return { error: "Please read and acknowledge the minimum requirements before submitting your offering." };
+  }
+
+  const requirementsChecked = payload.requirements_checked;
+  if (!Array.isArray(requirementsChecked) || requirementsChecked.length !== 11 || !requirementsChecked.every((checked) => checked === true)) {
+    return { error: "Please check all 11 requirements before submitting your offering." };
+  }
+
   return {
     email: verifiedEmail,
     fullName,
@@ -648,6 +657,7 @@ function validatePayload(payload, verifiedEmail) {
     notes,
     items,
     sessionId,
+    requirementsChecked,
     mode: payload.mode === "modify" ? "modify" : "new",
     offeringId: String(payload.offering_id || "").trim(),
   };
@@ -1741,6 +1751,8 @@ app.post("/api/save-offering", requireFirebaseAuth, async (req, res) => {
     items: mergedItems,
     receiptSnapshot: existingOffering?.receiptSnapshot || null,
     pdfDownloadedAt: existingOffering?.pdfDownloadedAt || null,
+    requirementsAcknowledgedAt: nowIso(),
+    requirementsChecked: parsed.requirementsChecked,
     createdAt: existingOffering?.createdAt || nowIso(),
     updatedAt: nowIso(),
   };
