@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import DataTable from "datatables.net-react";
 import DataTablesCore from "datatables.net-dt";
@@ -909,7 +909,37 @@ function sortAvailableItemsFirst(items, availability, cart) {
   return [...items].sort((left, right) => priority(left) - priority(right));
 }
 
-function HomePage({ firebaseUser, menu, cart, cartCount, setCartState, setDetailsState, availability }) {
+function useAvailabilityRefresh(refreshAvailability) {
+  useEffect(() => {
+    if (!refreshAvailability) return undefined;
+    const timer = window.setInterval(refreshAvailability, 3000);
+    function handleVisibility() {
+      if (!document.hidden) refreshAvailability();
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [refreshAvailability]);
+}
+
+function CategoryProgress({ name, items, takenItemIds }) {
+  const total = items.length;
+  const taken = items.filter((item) => takenItemIds.has(item.id)).length;
+  const percentage = total ? (taken / total) * 100 : 0;
+
+  return (
+    <>
+      <span className="category-progress-summary">{taken} of {tileCountLabel(total)} taken</span>
+      <span aria-label={`${name} items taken`} aria-valuemax={total || 1} aria-valuemin={0} aria-valuenow={taken} aria-valuetext={`${taken} of ${tileCountLabel(total)} taken`} className="category-progress-track" role="progressbar">
+        <span className="category-progress-fill" style={{ width: `${percentage}%` }} />
+      </span>
+    </>
+  );
+}
+
+function HomePage({ firebaseUser, menu, cart, cartCount, setCartState, setDetailsState, availability, refreshAvailability }) {
   const navigate = useNavigate();
   const [menuSearch, setMenuSearch] = useState("");
   const [searchMessage, setSearchMessage] = useState("");
@@ -917,6 +947,7 @@ function HomePage({ firebaseUser, menu, cart, cartCount, setCartState, setDetail
   const [requestedItemName, setRequestedItemName] = useState("");
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const [requestError, setRequestError] = useState("");
+  useAvailabilityRefresh(firebaseUser ? refreshAvailability : null);
 
   const searchableItems = (menu.categories || []).flatMap((category) =>
     (category.subcategories || []).flatMap((subcategory) =>
@@ -1003,7 +1034,7 @@ function HomePage({ firebaseUser, menu, cart, cartCount, setCartState, setDetail
           <div className="tile-grid">
             {menu.categories.map((category) => (
               <button
-                className="selection-tile"
+                className="selection-tile category-tile"
                 key={category.id}
                 onClick={() => {
                   setSelectedCategoryId(category.id);
@@ -1015,6 +1046,7 @@ function HomePage({ firebaseUser, menu, cart, cartCount, setCartState, setDetail
                 <div className="selection-icon">Menu</div>
                 <strong>{category.name}</strong>
                 <span>Tap to continue</span>
+                <CategoryProgress items={(category.subcategories || []).flatMap((subcategory) => subcategory.items || [])} name={category.name} takenItemIds={availability.taken} />
               </button>
             ))}
           </div>
@@ -1094,8 +1126,9 @@ function RulesPage({ firebaseUser }) {
   );
 }
 
-function CategoryPage({ firebaseUser, menu, cartCount }) {
+function CategoryPage({ firebaseUser, menu, cartCount, availability, refreshAvailability }) {
   const navigate = useNavigate();
+  useAvailabilityRefresh(firebaseUser ? refreshAvailability : null);
   if (!firebaseUser) {
     return <Navigate replace to="/rules" />;
   }
@@ -1105,7 +1138,7 @@ function CategoryPage({ firebaseUser, menu, cartCount }) {
       <div className="tile-grid">
         {menu.categories.map((category) => (
           <button
-            className="selection-tile"
+            className="selection-tile category-tile"
             key={category.id}
             onClick={() => {
               setSelectedCategoryId(category.id);
@@ -1117,6 +1150,7 @@ function CategoryPage({ firebaseUser, menu, cartCount }) {
             <div className="selection-icon">Menu</div>
             <strong>{category.name}</strong>
             <span>Tap to continue</span>
+            <CategoryProgress items={(category.subcategories || []).flatMap((subcategory) => subcategory.items || [])} name={category.name} takenItemIds={availability.taken} />
           </button>
         ))}
       </div>
@@ -1124,10 +1158,11 @@ function CategoryPage({ firebaseUser, menu, cartCount }) {
   );
 }
 
-function SubcategoryPage({ firebaseUser, menu, cartCount }) {
+function SubcategoryPage({ firebaseUser, menu, cartCount, availability, refreshAvailability }) {
   const navigate = useNavigate();
   const category = menu.categories.find((item) => item.id === getSelectedCategoryId());
   const [subcategorySearch, setSubcategorySearch] = useState("");
+  useAvailabilityRefresh(firebaseUser ? refreshAvailability : null);
   const filteredSubcategories = (category?.subcategories || []).filter((subcategory) => subcategory.name.toLowerCase().includes(subcategorySearch.trim().toLowerCase()));
 
   if (!firebaseUser) {
@@ -1147,7 +1182,7 @@ function SubcategoryPage({ firebaseUser, menu, cartCount }) {
       <div className="tile-grid">
         {filteredSubcategories.map((subcategory) => (
           <button
-            className="selection-tile"
+            className="selection-tile category-tile"
             key={subcategory.id}
             onClick={() => {
               setSelectedSubcategoryId(subcategory.id);
@@ -1157,7 +1192,7 @@ function SubcategoryPage({ firebaseUser, menu, cartCount }) {
           >
             <div className="selection-icon">Dish</div>
             <strong>{subcategory.name}</strong>
-            <span>{tileCountLabel(subcategory.items.length)}</span>
+            <CategoryProgress items={subcategory.items || []} name={subcategory.name} takenItemIds={availability.taken} />
           </button>
         ))}
         {!filteredSubcategories.length ? <div className="empty-state"><strong>No matching subcategories</strong><p>Try another name.</p></div> : null}
@@ -1181,23 +1216,7 @@ function FoodListPage({ firebaseUser, menu, cart, setCartState, availability, re
     cart
   );
 
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      refreshAvailability();
-    }, 3000);
-
-    function handleVisibility() {
-      if (!document.hidden) {
-        refreshAvailability();
-      }
-    }
-
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", handleVisibility);
-    };
-  }, [refreshAvailability]);
+  useAvailabilityRefresh(refreshAvailability);
 
   if (!firebaseUser) {
     return <Navigate replace to="/rules" />;
@@ -3425,7 +3444,7 @@ export default function App() {
     }
   }
 
-  async function refreshAvailability() {
+  const refreshAvailability = useCallback(async () => {
     if (!firebaseUser) {
       setAvailability({ taken: new Set(), held: new Set(), ownHeld: new Set(), conflicts: [] });
       return;
@@ -3442,7 +3461,7 @@ export default function App() {
     } catch {
       setAvailability({ taken: new Set(), held: new Set(), ownHeld: new Set(), conflicts: [] });
     }
-  }
+  }, [firebaseUser]);
 
   useEffect(() => {
     loadMenuData();
@@ -3527,6 +3546,7 @@ export default function App() {
         element={
           firebaseUser ? <PortalChooser permission={accessState.permission} /> : <HomePage
             availability={availability}
+            refreshAvailability={refreshAvailability}
             cart={cart}
             cartCount={totalQty(cart)}
             firebaseUser={firebaseUser}
@@ -3538,14 +3558,14 @@ export default function App() {
         path="/"
       />
       <Route
-        element={<HomePage availability={availability} cart={cart} cartCount={totalQty(cart)} firebaseUser={firebaseUser} menu={menu} setCartState={setCartState} setDetailsState={setDetailsState} />}
+        element={<HomePage availability={availability} cart={cart} cartCount={totalQty(cart)} firebaseUser={firebaseUser} menu={menu} refreshAvailability={refreshAvailability} setCartState={setCartState} setDetailsState={setDetailsState} />}
         path="/annakut"
       />
       <Route element={firebaseUser ? <VolunteerHome permission={accessState.permission} /> : <Navigate replace to="/" />} path="/volunteer" />
       <Route element={<Navigate replace to="/admin" />} path="/volunteer/admin" />
       <Route element={<RulesPage firebaseUser={firebaseUser} />} path="/rules" />
-      <Route element={<CategoryPage cartCount={totalQty(cart)} firebaseUser={firebaseUser} menu={menu} />} path="/category" />
-      <Route element={<SubcategoryPage cartCount={totalQty(cart)} firebaseUser={firebaseUser} menu={menu} />} path="/subcategory" />
+      <Route element={<CategoryPage availability={availability} cartCount={totalQty(cart)} firebaseUser={firebaseUser} menu={menu} refreshAvailability={refreshAvailability} />} path="/category" />
+      <Route element={<SubcategoryPage availability={availability} cartCount={totalQty(cart)} firebaseUser={firebaseUser} menu={menu} refreshAvailability={refreshAvailability} />} path="/subcategory" />
       <Route
         element={
           <FoodListPage

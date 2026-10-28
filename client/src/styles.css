@@ -394,6 +394,42 @@ button {
   opacity: 0.72;
 }
 
+.category-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow: hidden;
+  padding-bottom: 24px;
+}
+
+.category-tile .category-progress-summary {
+  margin-top: auto;
+  padding-top: 10px;
+  color: #7d2a1b;
+  font-weight: 700;
+  line-height: 1.4;
+  opacity: 1;
+}
+
+.category-tile .category-progress-track {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 8px;
+  background: #ead8bc;
+  opacity: 1;
+}
+
+.category-tile .category-progress-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #b87418, #8f2a18);
+  opacity: 1;
+  transition: width 240ms ease;
+}
+
 .rule-icon,
 .selection-icon {
   width: 100px;
