@@ -11,6 +11,8 @@ import "datatables.net-dt/css/dataTables.dataTables.css";
 import "datatables.net-buttons-dt/css/buttons.dataTables.css";
 import "datatables.net-responsive-dt/css/responsive.dataTables.css";
 import resetPasswordIcon from "./assets/reset-password.png";
+import exportPdfIcon from "./assets/export-pdf.png";
+import exportExcelIcon from "./assets/export-excel.png";
 import sevaLightBackground from "./assets/seva-light-bg.png";
 import { VolunteerAdmin, VolunteerAdminContent, VolunteerHome } from "./VolunteerPortal";
 import MinimumRequirements from "./MinimumRequirements";
@@ -111,30 +113,116 @@ function excelColumnName(index) {
   return name;
 }
 
-async function exportRowsToExcel({ columns, filename, rows }) {
-  const worksheetRows = [columns.map((column) => column.title), ...rows.map((row) => columns.map((column) => row[column.key] ?? "-"))];
-  const worksheetXml = worksheetRows.map((row, rowIndex) => `<row r="${rowIndex + 1}">${row.map((value, columnIndex) => `<c r="${excelColumnName(columnIndex)}${rowIndex + 1}" t="inlineStr"${rowIndex === 0 ? ' s="1"' : ""}><is><t>${xmlEscape(value)}</t></is></c>`).join("")}</row>`).join("");
+async function exportRowsToExcel({ columns, filename, rows, separateCancelledOrders = false }) {
+  const columnWidths = columns.map((column) => column.excelWidth || 30);
+  const worksheetRows = [];
+  const mergedRows = [];
+  const mainRows = separateCancelledOrders ? rows.filter((row) => row.status !== "cancelled") : rows;
+  const cancelledRows = separateCancelledOrders ? rows.filter((row) => row.status === "cancelled") : [];
+
+  function wrapCell(value, columnIndex) {
+    const width = Math.floor(columnWidths[columnIndex]) - 3;
+    return String(value).split(/\r?\n/).flatMap((line) => {
+      const lines = [];
+      while (line.length > width) {
+        const wordBreak = line.lastIndexOf(" ", width);
+        const splitAt = wordBreak > 0 ? wordBreak : width;
+        lines.push(line.slice(0, splitAt));
+        line = line.slice(splitAt).trimStart();
+      }
+      return [...lines, line];
+    });
+  }
+
+  function appendSection(sectionRows) {
+    worksheetRows.push({ values: columns.map((column) => column.title), style: 1, height: 26 });
+    for (const row of sectionRows) {
+      const cellLines = columns.map((column, columnIndex) => {
+        const value = row[column.key];
+        const text = Array.isArray(value)
+          ? value.map((entry, index) => column.numberedList ? `${index + 1}. ${entry}` : String(entry)).join("\n") || "-"
+          : value ?? "-";
+        return wrapCell(text, columnIndex);
+      });
+      const lineCount = Math.max(...cellLines.map((lines) => lines.length));
+      // Continue long cells on another row to stay within Excel's row-height limit.
+      for (let offset = 0; offset < lineCount; offset += 24) {
+        const values = cellLines.map((lines) => lines.slice(offset, offset + 24).join("\n"));
+        if (offset > 0 && separateCancelledOrders) values[0] = `${row.receipt} (continued)`;
+        worksheetRows.push({ values, style: 3, height: Math.max(26, Math.min(24, lineCount - offset) * 16 + 8) });
+      }
+    }
+  }
+
+  if (mainRows.length || !cancelledRows.length) appendSection(mainRows);
+  if (cancelledRows.length) {
+    if (mainRows.length) worksheetRows.push({ values: [], height: 14 });
+    mergedRows.push(worksheetRows.length + 1);
+    worksheetRows.push({ values: ["Cancel Orders"], style: 2, height: 28 });
+    appendSection(cancelledRows);
+  }
+
+  const worksheetXml = worksheetRows.map((row, rowIndex) => `<row r="${rowIndex + 1}" ht="${row.height}" customHeight="1">${row.values.map((value, columnIndex) => `<c r="${excelColumnName(columnIndex)}${rowIndex + 1}" t="inlineStr" s="${row.style}"><is><t xml:space="preserve">${xmlEscape(value)}</t></is></c>`).join("")}</row>`).join("");
+  const columnsXml = columnWidths.map((width, index) => `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`).join("");
+  const mergeXml = mergedRows.length && columns.length > 1 ? `<mergeCells count="${mergedRows.length}">${mergedRows.map((row) => `<mergeCell ref="A${row}:${excelColumnName(columns.length - 1)}${row}"/>`).join("")}</mergeCells>` : "";
   const zip = new JSZip();
   zip.file("[Content_Types].xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>');
   zip.folder("_rels").file(".rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
   zip.folder("xl").file("workbook.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Report" sheetId="1" r:id="rId1"/></sheets></workbook>');
   zip.folder("xl").folder("_rels").file("workbook.xml.rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>');
-  zip.folder("xl").file("styles.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF6E2116"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs></styleSheet>');
-  zip.folder("xl").folder("worksheets").file("sheet1.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${worksheetXml}</sheetData></worksheet>`);
+  zip.folder("xl").file("styles.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+      <fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/></font><font><b/><color rgb="FF6E2116"/><sz val="14"/><name val="Calibri"/></font></fonts>
+      <fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF6E2116"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFEE2E2"/><bgColor indexed="64"/></patternFill></fill></fills>
+      <borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFCBB59A"/></left><right style="thin"><color rgb="FFCBB59A"/></right><top style="thin"><color rgb="FFCBB59A"/></top><bottom style="thin"><color rgb="FFCBB59A"/></bottom><diagonal/></border></borders>
+      <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+      <cellXfs count="4">
+        <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+        <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyAlignment="1" applyBorder="1"><alignment vertical="center" wrapText="1"/></xf>
+        <xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center"/></xf>
+        <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyAlignment="1" applyBorder="1"><alignment vertical="top" wrapText="1"/></xf>
+      </cellXfs>
+      <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+    </styleSheet>`);
+  zip.folder("xl").folder("worksheets").file("sheet1.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetFormatPr defaultRowHeight="26"/><cols>${columnsXml}</cols><sheetData>${worksheetXml}</sheetData>${mergeXml}</worksheet>`);
   downloadBlob(await zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `${filename}.xlsx`);
 }
 
-async function exportRowsToPdf({ columns, filename, rows, title }) {
-  const body = [
-    columns.map((column) => ({ text: column.title, bold: true, color: "#fffaf1", fillColor: "#6e2116" })),
-    ...rows.map((row) => columns.map((column) => String(row[column.key] ?? "-"))),
-  ];
+async function exportRowsToPdf({ columns, filename, rows, title, allowRowBreaks = false, separateCancelledOrders = false }) {
+  function createTable(sectionRows) {
+    const body = [
+      columns.map((column) => ({ text: column.title, bold: true, color: "#fffaf1", fillColor: "#6e2116" })),
+      ...sectionRows.map((row) => columns.map((column) => {
+        const value = row[column.key];
+        if (!Array.isArray(value)) return String(value ?? "-");
+        if (!value.length) return "-";
+        const lines = value.map((text) => ({ text: String(text), margin: [0, 0, 0, 2] }));
+        return column.numberedList ? { ol: lines } : { stack: lines };
+      })),
+    ];
+    return {
+      table: { headerRows: 1, dontBreakRows: !allowRowBreaks, widths: columns.map((column) => column.pdfWidth || "*"), body },
+      layout: { hLineWidth: () => 0.5, vLineWidth: () => 0.5, hLineColor: () => "#cbb59a", vLineColor: () => "#cbb59a", paddingLeft: () => 4, paddingRight: () => 4, paddingTop: () => 5, paddingBottom: () => 5 },
+    };
+  }
+
+  const mainRows = separateCancelledOrders ? rows.filter((row) => row.status !== "cancelled") : rows;
+  const cancelledRows = separateCancelledOrders ? rows.filter((row) => row.status === "cancelled") : [];
+  const content = [{ text: title, bold: true, color: "#3d1d13", fontSize: 15, margin: [0, 0, 0, 10] }];
+  if (mainRows.length || !cancelledRows.length) content.push(createTable(mainRows));
+  if (cancelledRows.length) {
+    content.push(
+      { text: "Cancel Orders", bold: true, color: "#6e2116", fontSize: 15, margin: [0, 0, 0, 10], ...(mainRows.length ? { pageBreak: "before" } : {}) },
+      createTable(cancelledRows)
+    );
+  }
+
   const definition = {
     pageOrientation: "landscape",
     pageSize: "LETTER",
     pageMargins: [16, 20, 16, 20],
-    content: [{ text: title, bold: true, color: "#3d1d13", fontSize: 15, margin: [0, 0, 0, 10] }, { table: { headerRows: 1, dontBreakRows: true, widths: columns.map((column) => column.pdfWidth || "*"), body }, layout: { hLineWidth: () => 0.5, vLineWidth: () => 0.5, hLineColor: () => "#cbb59a", vLineColor: () => "#cbb59a", paddingLeft: () => 3, paddingRight: () => 3, paddingTop: () => 3, paddingBottom: () => 3 } }],
-    defaultStyle: { fontSize: columns.length >= 7 ? 6.5 : 8, lineHeight: 1.12 },
+    content,
+    defaultStyle: { fontSize: 8, lineHeight: 1.2 },
   };
   downloadBlob(await pdfMake.createPdf(definition).getBlob(), `${filename}.pdf`);
 }
@@ -810,6 +898,17 @@ function EmailPasswordAuthModal({ open, title, subtitle, onClose, onSuccess, ini
   );
 }
 
+function sortAvailableItemsFirst(items, availability, cart) {
+  function priority(item) {
+    if (cart[item.id]) return 0;
+    if (availability.taken.has(item.id)) return 2;
+    if (availability.held.has(item.id)) return 1;
+    return 0;
+  }
+
+  return [...items].sort((left, right) => priority(left) - priority(right));
+}
+
 function HomePage({ firebaseUser, menu, cart, cartCount, setCartState, setDetailsState, availability }) {
   const navigate = useNavigate();
   const [menuSearch, setMenuSearch] = useState("");
@@ -826,7 +925,7 @@ function HomePage({ firebaseUser, menu, cart, cartCount, setCartState, setDetail
   );
   const normalizedSearch = menuSearch.trim().toLowerCase();
   const searchResults = normalizedSearch
-    ? searchableItems.filter((item) => `${item.name} ${item.category} ${item.subcategory}`.toLowerCase().includes(normalizedSearch)).slice(0, 30)
+    ? sortAvailableItemsFirst(searchableItems.filter((item) => `${item.name} ${item.category} ${item.subcategory}`.toLowerCase().includes(normalizedSearch)), availability, cart).slice(0, 30)
     : [];
 
   useEffect(() => {
@@ -1076,7 +1175,11 @@ function FoodListPage({ firebaseUser, menu, cart, setCartState, availability, re
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [itemSearch, setItemSearch] = useState("");
   const normalizedItemSearch = itemSearch.trim().toLowerCase();
-  const filteredItems = (subcategory?.items || []).filter((item) => item.name.toLowerCase().includes(normalizedItemSearch));
+  const filteredItems = sortAvailableItemsFirst(
+    (subcategory?.items || []).filter((item) => item.name.toLowerCase().includes(normalizedItemSearch)),
+    availability,
+    cart
+  );
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -1667,7 +1770,7 @@ function AdminMobileCards({ activeTab, accounts, canManagePermissions, offerings
           );
         }
         return (
-          <article className="admin-mobile-card" key={record.id}>
+          <article className={`admin-mobile-card${record.status === "cancelled" ? " admin-order-cancelled" : ""}`} key={record.id}>
             <div className="admin-order-heading">
               <strong>{record.devotee?.full_name || "Devotee"} <span>({formatUsPhone(record.devotee?.phone || "") || "-"})</span></strong>
               <span>{record.receipt_no || record.id}</span>
@@ -1792,8 +1895,8 @@ function AdminReports({ menuItems, offerings }) {
         <strong>{report.title}</strong>
         {report.rows.length ? <>
           <div className="admin-direct-export-actions">
-            <button className="mini-button" onClick={() => exportRowsToPdf({ columns: columns.map((column) => ({ key: column, title: columnTitle(column) })), filename: `annakut-${reportType}-report`, rows: exportRows, title: `Annakut ${report.title} Report` })} type="button">Export PDF</button>
-            <button className="mini-button" onClick={() => exportRowsToExcel({ columns: columns.map((column) => ({ key: column, title: columnTitle(column) })), filename: `annakut-${reportType}-report`, rows: exportRows })} type="button">Export Excel</button>
+            <button className="mini-button" onClick={() => exportRowsToPdf({ columns: columns.map((column) => ({ key: column, title: columnTitle(column) })), filename: `annakut-${reportType}-report`, rows: exportRows, title: `Annakut ${report.title} Report` })} type="button"><img alt="" aria-hidden="true" className="export-button-icon" src={exportPdfIcon} />Export PDF</button>
+            <button className="mini-button" onClick={() => exportRowsToExcel({ columns: columns.map((column) => ({ key: column, title: columnTitle(column) })), filename: `annakut-${reportType}-report`, rows: exportRows })} type="button"><img alt="" aria-hidden="true" className="export-button-icon" src={exportExcelIcon} />Export Excel</button>
           </div>
           <div className="report-mobile-cards">{exportRows.map((row, index) => <article className="admin-mobile-card" key={`${reportType}-${index}`}>{columns.map((column) => <span key={column}><b>{columnTitle(column)}</b>{row[column]}</span>)}</article>)}</div>
           <div className="report-desktop-table admin-table-wrap">
@@ -1812,6 +1915,7 @@ function AdminReports({ menuItems, offerings }) {
 }
 
 function AdminDataTable({ activeTab, accounts, canManagePermissions, offerings, menuItems, permissionOptions, statusOptions, savingId, onCancelOrder, onDeleteUser, onEdit, onPermissionChange, onRemoveItem, onResetPassword, onStatusChange }) {
+  // Search and sort slots return text so rows do not need to be rendered first.
   const options = {
     responsive: false,
     pageLength: 10,
@@ -1846,13 +1950,13 @@ function AdminDataTable({ activeTab, accounts, canManagePermissions, offerings, 
         data={accounts}
         options={options}
         slots={{
-          2: (phone) => formatUsPhone(phone || "") || "-",
-          3: (permission, account) => (
+          2: (phone, type, _account) => type === "filter" ? [phone, normalizePhone(phone || ""), formatUsPhone(phone || "")].join(" ") : formatUsPhone(phone || "") || "-",
+          3: (permission, type, account) => type === "display" ? (
             <select className="admin-select" disabled={!canManagePermissions || savingId === account.uid} onChange={(event) => onPermissionChange(account.uid, event.target.value)} value={permission || "user"}>
               {permissionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
-          ),
-          5: (_data, account) => <div className="admin-inline-actions"><button className="mini-button" onClick={() => onEdit("user", account)} type="button">Edit</button><button className="mini-button" disabled={savingId === account.uid} onClick={() => onResetPassword(account)} type="button">Reset Password</button><button className="mini-button danger" disabled={savingId === account.uid} onClick={() => onDeleteUser(account)} type="button">Delete</button></div>,
+          ) : permissionOptions.find((option) => option.value === (permission || "user"))?.label || permission || "user",
+          5: (_data, type, account) => type === "display" ? <div className="admin-inline-actions"><button className="mini-button" onClick={() => onEdit("user", account)} type="button">Edit</button><button className="mini-button" disabled={savingId === account.uid} onClick={() => onResetPassword(account)} type="button">Reset Password</button><button className="mini-button danger" disabled={savingId === account.uid} onClick={() => onDeleteUser(account)} type="button">Delete</button></div> : "",
         }}
       />
     );
@@ -1871,7 +1975,7 @@ function AdminDataTable({ activeTab, accounts, canManagePermissions, offerings, 
         data={menuItems}
         options={options}
         slots={{
-          3: (_data, item) => <MenuItemActions item={item} onEdit={(selectedItem) => onEdit("item", selectedItem)} onRemove={onRemoveItem} />,
+          3: (_data, type, item) => type === "display" ? <MenuItemActions item={item} onEdit={(selectedItem) => onEdit("item", selectedItem)} onRemove={onRemoveItem} /> : "",
         }}
       />
     );
@@ -1891,27 +1995,35 @@ function AdminDataTable({ activeTab, accounts, canManagePermissions, offerings, 
         { data: null, title: "Action", orderable: false, searchable: false },
       ]}
       data={offerings}
-      options={options}
+      options={{
+        ...options,
+        rowCallback: (row, offering) => row.classList.toggle("admin-order-cancelled", offering.status === "cancelled"),
+      }}
       slots={{
         0: (receipt, offering) => receipt || offering.id,
-        1: (_name, offering) => (
-          <div className="admin-user-cell">
-            <strong>{offering.devotee?.full_name || "Devotee"}</strong>
-            <span>{formatUsPhone(offering.devotee?.phone || "") || "-"}</span>
-            <span>{offering.devotee?.email || "-"}</span>
-          </div>
-        ),
-        2: (items) => (
+        1: (name, type, offering) => {
+          const devotee = offering.devotee || {};
+          if (type === "filter") return [name, devotee.phone, normalizePhone(devotee.phone || ""), formatUsPhone(devotee.phone || ""), devotee.email].filter(Boolean).join(" ");
+          if (type !== "display") return name || "Devotee";
+          return (
+            <div className="admin-user-cell">
+              <strong>{name || "Devotee"}</strong>
+              <span>{formatUsPhone(devotee.phone || "") || "-"}</span>
+              <span>{devotee.email || "-"}</span>
+            </div>
+          );
+        },
+        2: (items, type, _offering) => type === "display" ? (
           <div className="admin-items-cell">
             {(items || []).length ? items.map((item, index) => <span key={item.id || `${item.name}-${index}`}>{item.name}</span>) : <span>-</span>}
           </div>
-        ),
-        5: (status, offering) => (
+        ) : (items || []).map((item) => item.name).join(" "),
+        5: (status, type, offering) => type === "display" ? (
           <select className="admin-select" disabled={savingId === offering.id} onChange={(event) => onStatusChange(offering.id, event.target.value)} value={status || "received"}>
             {statusOptions.map((option) => <option key={option} value={option}>{option.replace("_", " ")}</option>)}
           </select>
-        ),
-        7: (_data, offering) => activeTab === "orders" ? (
+        ) : status || "received",
+        7: (_data, type, offering) => type === "display" && activeTab === "orders" ? (
           <div className="admin-inline-actions">
             <button className="mini-button" onClick={() => onEdit("order", offering)} type="button">Edit</button>
             <button className="mini-button danger" disabled={savingId === offering.id || offering.status === "cancelled"} onClick={() => onCancelOrder(offering)} type="button">
@@ -1981,20 +2093,22 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
       : {
           title: "Annakut Orders Report",
           filename: "annakut-orders",
+          allowRowBreaks: true,
+          separateCancelledOrders: true,
           columns: [
-            { key: "receipt", title: "Receipt", pdfWidth: 55 }, { key: "user", title: "User", pdfWidth: 105 }, { key: "items", title: "Items", pdfWidth: 145 },
-            { key: "containers", title: "Containers", pdfWidth: 48 }, { key: "address", title: "Address", pdfWidth: 170 }, { key: "status", title: "Status", pdfWidth: 55 },
-            { key: "submitted", title: "Submitted", pdfWidth: 108 },
+            { key: "receipt", title: "Receipt", pdfWidth: 50, excelWidth: 24 }, { key: "user", title: "User", pdfWidth: 135, excelWidth: 38 }, { key: "items", title: "Items", pdfWidth: "*", excelWidth: 54, numberedList: true },
+            { key: "containers", title: "Containers", pdfWidth: 45, excelWidth: 14 }, { key: "address", title: "Address", pdfWidth: 105, excelWidth: 42 }, { key: "status", title: "Status", pdfWidth: 45, excelWidth: 16 },
+            { key: "submitted", title: "Submitted", pdfWidth: 75, excelWidth: 25 },
           ],
           rows: offerings.map((offering) => ({
             receipt: offering.receipt_no || offering.id || "-",
-            user: [offering.devotee?.full_name, formatUsPhone(offering.devotee?.phone || ""), offering.devotee?.email].filter(Boolean).join(" | ") || "-",
-            items: (offering.items || []).map((item) => item.name).join(", ") || "-",
+            user: [offering.devotee?.full_name, formatUsPhone(offering.devotee?.phone || ""), offering.devotee?.email].filter(Boolean),
+            items: (offering.items || []).map((item) => item.name).filter(Boolean),
             containers: offering.containers_required ?? (offering.items || []).length,
             address: offering.devotee?.address || "-",
             status: offering.status || "received",
             submitted: offering.created_at || "-",
-          })),
+          })).sort((left, right) => left.receipt.localeCompare(right.receipt, "en", { numeric: true })),
         };
 
   useEffect(() => {
@@ -2353,8 +2467,8 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
       {!['settings', 'reports', 'requests', 'volunteer', 'suggestions'].includes(activeTab) ? <div className="list-panel admin-table-panel">
         <strong>{activeTab === "users" ? "Registered Users" : activeTab === "items" ? "Firebase Menu Items" : "Orders"}</strong>
         <div className="admin-direct-export-actions">
-          <button className="mini-button" disabled={!adminExport.rows.length} onClick={() => exportRowsToPdf(adminExport)} type="button">Export PDF</button>
-          <button className="mini-button" disabled={!adminExport.rows.length} onClick={() => exportRowsToExcel(adminExport)} type="button">Export Excel</button>
+          <button className="mini-button" disabled={!adminExport.rows.length} onClick={() => exportRowsToPdf(adminExport)} type="button"><img alt="" aria-hidden="true" className="export-button-icon" src={exportPdfIcon} />Export PDF</button>
+          <button className="mini-button" disabled={!adminExport.rows.length} onClick={() => exportRowsToExcel(adminExport)} type="button"><img alt="" aria-hidden="true" className="export-button-icon" src={exportExcelIcon} />Export Excel</button>
         </div>
         <AdminMobileCards
           accounts={accounts}

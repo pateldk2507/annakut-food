@@ -2302,6 +2302,26 @@ button {
   background: rgba(104, 56, 27, 0.035);
 }
 
+.admin-mobile-card.admin-order-cancelled,
+.admin-table-wrap table.dataTable > tbody > tr.admin-order-cancelled > td {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+.admin-mobile-card.admin-order-cancelled {
+  border-color: #ef4444;
+}
+
+.admin-table-wrap table.dataTable > tbody > tr.admin-order-cancelled > td {
+  box-shadow: none;
+}
+
+.admin-order-cancelled .admin-items-cell span,
+.admin-order-cancelled .admin-card-items i {
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+}
+
 .admin-table-wrap .dt-paging-button {
   border-radius: 10px !important;
 }
@@ -2708,6 +2728,19 @@ button {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
+}
+
+.admin-direct-export-actions .mini-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.export-button-icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  object-fit: contain;
 }
 
 .report-mobile-cards {
