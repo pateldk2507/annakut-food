@@ -16,6 +16,7 @@ import exportExcelIcon from "./assets/export-excel.png";
 import sevaLightBackground from "./assets/seva-light-bg.png";
 import { VolunteerAdmin, VolunteerAdminContent, VolunteerHome } from "./VolunteerPortal";
 import MinimumRequirements from "./MinimumRequirements";
+import AdminOrderItemPicker from "./AdminOrderItemPicker";
 import {
   getCart,
   getCartSessionId,
@@ -2066,7 +2067,6 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState("");
   const [editor, setEditor] = useState(null);
-  const [orderItemSearch, setOrderItemSearch] = useState("");
   const [newItem, setNewItem] = useState({ categoryId: "", subcategoryId: "", name: "" });
   const [newCategoryName, setNewCategoryName] = useState("");
   const [receiptFooterMessage, setReceiptFooterMessage] = useState("Please keep this email as your receipt. To change or cancel a submitted offering, please call Rakeshbhai or Sagarbhai.");
@@ -2185,7 +2185,6 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
   }
 
   function openEditor(type, data) {
-    setOrderItemSearch("");
     const editorData = structuredClone(data);
     if (type === "item") editorData.originalName = data.name || "";
     setEditor({ type, data: editorData });
@@ -2546,23 +2545,13 @@ function AdminPage({ firebaseUser, menu, setMenu }) {
                       </button>
                     </div>
                   ))}
-                  <label className="field-card admin-order-item-search">
-                    <span>Add Item</span>
-                    <input className="admin-search" onChange={(event) => setOrderItemSearch(event.target.value)} placeholder="Search by item, category, or subcategory" type="search" value={orderItemSearch} />
-                    {orderItemSearch.trim() ? (
-                      <div className="admin-order-search-results">
-                        {menuItems
-                          .filter((item) => !editor.data.items.some((entry) => (entry.id || entry.item_id) === item.id))
-                          .filter((item) => `${item.name} ${item.category} ${item.subcategory}`.toLowerCase().includes(orderItemSearch.trim().toLowerCase()))
-                          .slice(0, 30)
-                          .map((item) => (
-                            <button key={item.id} onClick={() => { setEditor({ ...editor, data: { ...editor.data, items: [...editor.data.items, { ...item, item_id: item.id, qty: 1 }] } }); setOrderItemSearch(""); }} type="button">
-                              <strong>{item.name}</strong><span>{item.category} - {item.subcategory}</span>
-                            </button>
-                          ))}
-                      </div>
-                    ) : null}
-                  </label>
+                  <AdminOrderItemPicker
+                    items={editor.data.items || []}
+                    key={editor.data.id}
+                    menuItems={menuItems}
+                    offeringId={editor.data.id}
+                    onAdd={(item) => setEditor({ ...editor, data: { ...editor.data, items: [...editor.data.items, { ...item, item_id: item.id, qty: 1 }] } })}
+                  />
                 </>
               ) : null}
             </div>

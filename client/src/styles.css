@@ -2427,6 +2427,12 @@ button {
   border: 1px solid rgba(104, 56, 27, 0.2);
   border-radius: 12px;
   background: #fffaf1;
+  color: #3d1d13;
+}
+
+.admin-order-search-results > [role="status"] {
+  margin: 0;
+  padding: 10px 12px;
 }
 
 .admin-order-search-results button {

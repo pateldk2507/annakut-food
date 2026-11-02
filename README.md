@@ -25,6 +25,9 @@ It also supports modifying an existing offering, booked-item locking, reminder e
 - If the devotee does not complete submission in that window, the hold expires automatically and the item becomes available again.
 - Once the offering is submitted successfully, the held items become permanently taken.
 - When a devotee returns later, the app resumes their latest offering so new selections update the same order by default.
+- The admin order editor only suggests items that are neither taken by another active order nor on hold. It checks availability when opened and refreshes every three seconds while open.
+
+Run `npm --prefix client run test:admin-availability` to check the admin item picker in headless Chrome with isolated test data. Set `CHROME_PATH` if Chrome is not installed at its default Windows location. The test removes its temporary browser profile when finished.
 
 ## Confirmation emails
 
@@ -65,3 +68,4 @@ It also supports modifying an existing offering, booked-item locking, reminder e
 - Firebase Authentication is used in the React app, and Firebase Realtime Database is used on the backend.
 - Address entry is restricted to Thunder Bay suggestions returned by Geoapify autocomplete in the client.
 - The old Django project files have been removed. The remaining `frontend/static` folder is intentionally kept for shared menu and image assets.
+- `tmp/` contains local test scripts, screenshots, export previews, and temporary browser profiles from earlier checks. It is ignored by Git, is not used by the app, and can be deleted when those test artifacts are no longer needed.
